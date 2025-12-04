@@ -11,6 +11,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==============================
+# 0. Output Folder
+# ==============================
+OUTPUT_DIR = "results"  # <<< 新增的變數
+
+
+# ==============================
 # 1. 模型初始化
 # ==============================
 GPT5_KEY = os.getenv("QUESTION_MODEL_API_KEY")
@@ -98,7 +104,7 @@ def safe_call(client, model, messages, max_tokens=800, retry=3, wait=1.0):
             txt = resp.output_text
             if txt and txt.strip():
                 return txt
-        except Exception as e:
+        except Exception:
             time.sleep(wait)
     return ""
 
@@ -127,7 +133,6 @@ def review_question(text):
     ]
     out = safe_call(mini_client, "gpt-4o-mini", msgs)
 
-    # 嘗試解析 JSON
     try:
         s = out[out.find("{"): out.rfind("}") + 1]
         j = json.loads(s)
@@ -139,7 +144,7 @@ def review_question(text):
 
 
 # ==============================
-# 5. 格式強制修復器（Level-3）
+# 5. 格式強制修復器
 # ==============================
 def force_fix_format(text):
     msgs = [
@@ -148,12 +153,10 @@ def force_fix_format(text):
     ]
     out = safe_call(mini_client, "gpt-4o-mini", msgs)
 
-    # 若修復失敗 → 再重試 1 次
     if ("答案：" not in out) or ("解析：" not in out):
         out2 = safe_call(mini_client, "gpt-4o-mini", msgs)
         if out2.strip():
             out = out2
-
     return out
 
 
@@ -162,7 +165,6 @@ def force_fix_format(text):
 # ==============================
 def generate_single(topic):
     try:
-        # === (1) GPT-5 出題 ===
         msgs = [
             {"role": "system", "content": QUESTION_PROMPT},
             {"role": "user", "content": f"請根據主題「{topic}」出一題。"}
@@ -171,17 +173,11 @@ def generate_single(topic):
         if not raw.strip():
             raw = f"題目（gpt5 空白）請出與 {topic} 有關的題目。"
 
-        # === (2) 美化 ===
         pretty = beautify(raw)
-
-        # === (3) 審題 ===
         reviewed = review_question(pretty)
         final_raw = reviewed.get("final_question") or pretty
-
-        # === (4) Level-3 強制修復 ===
         fixed = force_fix_format(final_raw)
 
-        # === 萃取答案與解析 ===
         lines = fixed.splitlines()
         ans = next((l for l in lines if l.startswith("答案")), "答案：N/A")
         exp = next((l for l in lines if l.startswith("解析")), "解析：N/A")
@@ -239,7 +235,6 @@ def writer(result_q: Queue, total, jsonl_path, csv_path):
             r = result_q.get()
             done += 1
 
-            # JSONL：穩定格式
             fj.write(json.dumps({
                 "messages": [
                     {"role": "user", "content": QUESTION_PROMPT},
@@ -247,7 +242,6 @@ def writer(result_q: Queue, total, jsonl_path, csv_path):
                 ]
             }, ensure_ascii=False) + "\n")
 
-            # CSV
             w.writerow([
                 r["topic"], r["decision"], r["reason"],
                 r["final"], r["answer"], r["explain"],
@@ -261,30 +255,32 @@ def writer(result_q: Queue, total, jsonl_path, csv_path):
 # 9. 主程式
 # ==============================
 def generate_dataset(total=20, workers=4):
+    # <<< 建立輸出資料夾（不存在則建立）
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     task_q = Queue()
     result_q = Queue()
 
-    # 任務入列
     for _ in range(total):
         task_q.put(random.choice(CS_TOPICS))
 
-    # END signal
     for _ in range(workers):
         task_q.put("__END__")
 
-    # workers
     ps = []
     for _ in range(workers):
         p = Process(target=worker, args=(task_q, result_q))
         p.start()
         ps.append(p)
 
-    # writer
+    # <<< 改為輸出到指定資料夾
+    jsonl_path = os.path.join(OUTPUT_DIR, "dataset.jsonl")
+    csv_path = os.path.join(OUTPUT_DIR, "review.csv")
+
     wp = Process(target=writer,
-                 args=(result_q, total, "dataset.jsonl", "review.csv"))
+                 args=(result_q, total, jsonl_path, csv_path))
     wp.start()
 
-    # join
     for p in ps:
         p.join()
     wp.join()

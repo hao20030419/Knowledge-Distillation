@@ -9,6 +9,12 @@ MINI_KEY = os.getenv("REVIEW_MODEL_API_KEY")
 mini = OpenAI(api_key=MINI_KEY)
 
 # -------------------------
+# 統一輸出資料夾
+# -------------------------
+OUTPUT_DIR = "results"  # 你也可以改成 "data" 或其他名稱
+
+
+# -------------------------
 # Final QA Agent Prompt
 # -------------------------
 FINAL_QA_PROMPT = """
@@ -51,7 +57,7 @@ def call_mini(messages, retry=3):
     return ""
 
 def is_good_mcq(question_text):
-    """Return True/False based on final QA model judgement."""
+    """Return (keep: bool, reason: str) based on final QA model judgement."""
     msgs = [
         {"role": "system", "content": FINAL_QA_PROMPT},
         {"role": "user", "content": question_text}
@@ -59,7 +65,7 @@ def is_good_mcq(question_text):
 
     out = call_mini(msgs)
     if not out.strip():
-        return False
+        return False, "empty response"
 
     try:
         s = out[out.find("{"): out.rfind("}") + 1]
@@ -68,21 +74,34 @@ def is_good_mcq(question_text):
     except:
         return False, "JSON parse failed"
 
+
 # -------------------------
 # 清洗流程
 # -------------------------
-
 def clean_dataset(
     source="dataset.jsonl",
     output="clean_dataset.jsonl",
     removed="removed.jsonl"
 ):
+    """
+    會從 OUTPUT_DIR/source 讀檔，
+    並把結果寫到 OUTPUT_DIR/output、OUTPUT_DIR/removed
+    """
+
+    # 確保資料夾存在
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    # 把檔名組合成完整路徑
+    source_path = os.path.join(OUTPUT_DIR, source)
+    output_path = os.path.join(OUTPUT_DIR, output)
+    removed_path = os.path.join(OUTPUT_DIR, removed)
+
     keep_count = 0
     drop_count = 0
 
-    with open(source, "r", encoding="utf-8") as f_in, \
-         open(output, "w", encoding="utf-8") as f_out, \
-         open(removed, "w", encoding="utf-8") as f_bad:
+    with open(source_path, "r", encoding="utf-8") as f_in, \
+         open(output_path, "w", encoding="utf-8") as f_out, \
+         open(removed_path, "w", encoding="utf-8") as f_bad:
 
         for line in f_in:
             try:
@@ -108,8 +127,10 @@ def clean_dataset(
     print("\n=== 清洗完成 ===")
     print(f"保留：{keep_count}")
     print(f"移除：{drop_count}")
-    print(f"輸出檔：{output}")
-    print(f"剔除檔：{removed}")
+    print(f"輸入檔：{source_path}")
+    print(f"輸出檔：{output_path}")
+    print(f"剔除檔：{removed_path}")
+
 
 if __name__ == "__main__":
     clean_dataset()
