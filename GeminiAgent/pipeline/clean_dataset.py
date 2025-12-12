@@ -1,90 +1,132 @@
-import json
 import os
+import json
 import random
-from google import genai
+import re
 from dotenv import load_dotenv
+from google import genai
 
+
+# ================================================================
+# 🔧 初始化
+# ================================================================
 load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+key = os.getenv("GEMINI_API_KEY")
+if not key:
+    raise ValueError("❌ 找不到 GEMINI_API_KEY，請確認 .env 設定正確")
 
-# === 正確 results 資料夾 ===
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # → GeminiAgent/
+client = genai.Client(api_key=key)
+
+# 指向 GeminiAgent 根目錄
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(BASE_DIR, "results")
-
-# === 嚴格審題器 Prompt ===
-FINAL_QA_PROMPT = """
-你是一位極度嚴格的題目檢查員。
-
-請檢查下面單選題是否完整、清楚、答案唯一、解析合理。
-
-請回覆 JSON：
-{
-  "keep": true 或 false,
-  "reason": "原因"
-}
-"""
-
-# ---------------------------------------------------
-# Prompt 模板：讓 question 看起來更自然
-# ---------------------------------------------------
-PROMPT_TEMPLATES = [
-    "請幫我出一題{subject}的單選題",
-    "我想練習{subject}，請給我一題四選一題目",
-    "可以出一題與{subject}相關的 MCQ 題目嗎？",
-    "請生成一題{subject}領域的選擇題（四選一）",
-    "請提供一題{subject}的考試題目（四選一）",
-]
-
-def random_prompt(subject: str):
-    return random.choice(PROMPT_TEMPLATES).format(subject=subject)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-# ---------------------------------------------------
-# Gemini 審題
-# ---------------------------------------------------
-def llm_check(text):
-    try:
-        resp = client.models.generate_content(
-            model="gemini-3-pro-preview",
-            contents=[
-                {"role": "system", "content": FINAL_QA_PROMPT},
-                {"role": "user", "content": text}
-            ]
-        )
-        txt = resp.text
-        s = txt[txt.find("{"): txt.rfind("}") + 1]
-        data = json.loads(s)
-        return data.get("keep", False), data.get("reason", "")
-    except Exception:
-        return False, "審查解析失敗"
+# ================================================================
+# 🎯 Format: 根據 topic 生成固定 prompt
+# ================================================================
+def extract_subject(topic: str) -> str:
+    if not topic:
+        return "資料結構"
+    if "-" in topic:
+        return topic.split("-")[0].strip()
+    return topic.strip()
 
 
-# ---------------------------------------------------
-# topic → 資訊工程{科目}
-# 例：
-#   資料結構 - 陣列(Array) → 資訊工程資料結構
-# ---------------------------------------------------
-def extract_subject(topic: str):
-    if " - " in topic:
-        field = topic.split(" - ")[0].strip()
-        return f"資訊工程{field}"
-    return "資訊工程"
+# ================================================================
+# ✂️ 抽取題幹 + A/B/C/D 選項（Instruction fine-tune 最重要部分）
+# ================================================================
+def extract_question_only(full: str) -> dict:
+    # 1️⃣ 移除答案與解析
+    full = re.sub(r"(?i)(答案|正確答案|解析|解釋)[:：].*", "", full)
+
+    # 2️⃣ 移除答案提示句
+    full = re.sub(r"(?i)(正確為|正確選項|答案是|答案為|the correct answer is).*", "", full)
+
+    # 3️⃣ 移除符號提示
+    full = re.sub(r"[✓✔✗✘→←★⭐•＊*]+", "", full)
+
+    # 4️⃣ 移除 (正確)、(incorrect)
+    full = re.sub(r"\(.*?(正確|錯誤|correct|incorrect).*?\)", "", full, flags=re.I)
+
+    # 5️⃣ 移除 markdown / latex / 前置噪音
+    full = re.sub(r"(?i)^題目[:：]?\s*", "", full)
+    full = re.sub(r"(?i)^以下.*內容[:：]\s*", "", full)
+    full = re.sub(r"(?i)^這.*版本.*?\s*", "", full)
+    full = re.sub(r"###\s*題目\s*", "", full)
+    full = full.replace("###", "").replace("```", "").replace("$", "")
+    # 將 LaTeX 的 \pmod 統一為文字 mod
+    full = re.sub(r"\\pmod", "mod", full)
+
+    lines = full.splitlines()
+
+    stem_lines = []
+    options = {}
+    option_count = 0
+
+    # 6️⃣ 抽取題幹與選項
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        # 行首若帶有「題目：」等字樣，去除以維持一致
+        s = re.sub(r"(?i)^題目[:：]?\s*", "", s)
+
+        # 偵測選項 A/B/C/D
+        match = re.match(r"^\(?([A-Da-d])\)?[.)]?\s*(.*)", s)
+        if match:
+            key = match.group(1).upper()
+            text = match.group(2).strip()
+
+            # 清理符號
+            text = re.sub(r"(←|→|<-|->)", "", text).strip()
+            text = re.sub(r"(?i)(正確|最佳選項|最合適).*", "", text).strip()
+
+            if key not in options:
+                options[key] = text
+                option_count += 1
+
+            if option_count == 4:
+                break
+        else:
+            if option_count == 0:
+                stem_lines.append(s)
+
+    stem = " ".join(stem_lines).strip()
+    # 再次保險移除開頭「題目：」
+    stem = re.sub(r"(?i)^題目[:：]?\s*", "", stem)
+
+    # 7️⃣ 保證 A/B/C/D 四個選項存在
+    final_options = {k: options.get(k, "") for k in ["A", "B", "C", "D"]}
+
+    # 選項內容標準化：
+    # - 統一 \pmod -> mod（若上面殘留）
+    # - 對於像 "k mod N + 1" 的寫法，補上括號為 "((k mod N) + 1)" 以避免與 (k+1) mod N 混淆
+    def _normalize_option(t: str) -> str:
+        t = re.sub(r"\\pmod", "mod", t)
+        # 將 'a mod b + 1' -> '((a mod b) + 1)'
+        t = re.sub(r"\b([A-Za-z0-9_]+)\s*mod\s*([A-Za-z0-9_]+)\s*\+\s*1\b", r"((\1 mod \2) + 1)", t)
+        return t
+
+    for k in list(final_options.keys()):
+        final_options[k] = _normalize_option(final_options[k])
+
+    return {
+        "stem": stem,
+        "options": final_options
+    }
 
 
-# ---------------------------------------------------
-# 主清洗流程
-# ---------------------------------------------------
-def clean_dataset(source="dataset.jsonl"):
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    src = os.path.join(OUTPUT_DIR, source)
+# ================================================================
+# 🧹 Clean dataset（不再進行審查，使用 keep flag）
+# ================================================================
+def clean_dataset(source_name="dataset.jsonl"):
+    src = os.path.join(OUTPUT_DIR, source_name)
     out = os.path.join(OUTPUT_DIR, "clean_dataset.jsonl")
     removed = os.path.join(OUTPUT_DIR, "removed.jsonl")
 
     keep = drop = 0
-
-    print("🧹 Step 2：清洗資料集...")
 
     with open(src, "r", encoding="utf-8") as fin, \
          open(out, "w", encoding="utf-8") as fout, \
@@ -93,46 +135,54 @@ def clean_dataset(source="dataset.jsonl"):
         for line in fin:
             data = json.loads(line)
 
-            topic = data.get("topic", "")
-            full = data.get("question", "") or data["question"]
-
-            # Gemini 查核題目品質
-            ok, reason = llm_check(full)
-
-            if not ok:
+            # 1️⃣ dataset.jsonl 已帶有 keep flag → 直接判斷
+            if not data.get("keep", False):
                 drop += 1
-                print(f"[DROP] {reason}")
                 fdrop.write(json.dumps({
-                    "reason": reason,
-                    "content": full
+                    "reason": data.get("reason", "keep = false"),
+                    "content": data
+                }, ensure_ascii=False) + "\n")
+                continue
+
+            # 2️⃣ 讀取題目
+            try:
+                if "content" in data:
+                    full = data["content"].strip()
+                elif "messages" in data:
+                    full = data["messages"][1]["content"].strip()
+                else:
+                    raise KeyError("缺少 content 或 messages 欄位")
+
+            except Exception as e:
+                drop += 1
+                fdrop.write(json.dumps({
+                    "reason": f"題目內容無法讀取：{e}",
+                    "content": data
                 }, ensure_ascii=False) + "\n")
                 continue
 
             keep += 1
-            print(f"[KEEP] {reason}")
+            print(f"[KEEP] {data.get('reason', '')}")
 
-            # ---------------------------------------------------
-            # 移除「答案：」與「解析：」
-            # ---------------------------------------------------
-            lines = full.splitlines()
-            llmans = "\n".join([
-                l for l in lines
-                if not l.strip().startswith("答案")
-                and not l.strip().startswith("解析")
-            ]).strip()
+            # 3️⃣ 解析題幹與選項
+            llmans = extract_question_only(full)
 
-            # ---------------------------------------------------
-            # 產生 prompt-like 的 question
-            # ---------------------------------------------------
-            subject = extract_subject(topic)
-            question_text = random_prompt(subject)
-
+            # 4️⃣ 使用實際生成時的 prompt（直接從 dataset.jsonl 的 question 欄位讀取）
+            # 這樣可以保留多樣化的人類語氣 prompt，與題目形成一一對應的 instruction-following 對
             fout.write(json.dumps({
-                "question": question_text,
+                "question": data.get("question", ""),
                 "LLMans": llmans
             }, ensure_ascii=False) + "\n")
 
     print("\n=== 清洗完成 ===")
     print(f"✔ 保留：{keep}")
     print(f"✖ 移除：{drop}")
-    print(f"📄 輸出：{out}")
+    print(f"📄 清洗後輸出：{out}")
+
+
+# ================================================================
+# 🚀 主程式
+# ================================================================
+if __name__ == "__main__":
+    print("🚀 清洗 dataset.jsonl 中的題目...")
+    clean_dataset()
