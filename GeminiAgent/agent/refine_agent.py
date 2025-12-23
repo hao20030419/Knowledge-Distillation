@@ -1,5 +1,6 @@
 import os
 from google import genai
+from GeminiAgent.agent.llm_utils import generate_content_with_tokens
 from dotenv import load_dotenv
 
 """
@@ -44,9 +45,5 @@ def refine_question(original_question: str, comment: str) -> str:
         f"【原題目】\n{original_question}\n\n"
         f"【建議】\n{comment}\n"
     )
-
-    resp = client.models.generate_content(
-        model=REFINE_MODEL_NAME,
-        contents=msg
-    )
-    return resp.text.strip() if resp.text else ""
+    text, out_tokens, in_tokens = generate_content_with_tokens(REFINE_MODEL_NAME, msg)
+    return text, out_tokens, in_tokens

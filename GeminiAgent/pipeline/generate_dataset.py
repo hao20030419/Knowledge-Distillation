@@ -48,19 +48,19 @@ def worker(task_q: Queue, result_q: Queue):
             break
 
         # 1️⃣ Generator Agent：Gen_LLM 生成原始題目（回傳使用到的人類 prompt 與 LLM 回應）
-        used_prompt, raw_question = generate_raw_question(topic)
+        used_prompt, raw_question, gen_out_tokens, gen_in_tokens = generate_raw_question(topic)
 
         # 2️⃣ Comment Agent：comment_LLM 產生修改建議
-        comment = comment_question(raw_question)
+        comment, comment_out_tokens, comment_in_tokens = comment_question(raw_question)
 
         # 3️⃣ Comment Agent：refine_LLM 根據建議改寫題目
-        refined_question = refine_question(raw_question, comment)
+        refined_question, refine_out_tokens, refine_in_tokens = refine_question(raw_question, comment)
 
         # 4️⃣ Beautify Agent：beautify_LLM 做排版與符號清理
-        pretty_question = beautify(refined_question)
+        pretty_question, beautify_out_tokens, beautify_in_tokens = beautify(refined_question)
 
         # 5️⃣ Reviewer Agent：keep_or_not_LLM 決定是否保留
-        keep, reason = review_question(pretty_question)
+        keep, reason, review_out_tokens, review_in_tokens = review_question(pretty_question)
 
         # dataset.jsonl 必須符合 clean_dataset 的需求
         payload = {
@@ -79,6 +79,19 @@ def worker(task_q: Queue, result_q: Queue):
                 "comment": comment,
                 "refined": refined_question,
             },
+            # token usage stats per stage (approximate if SDK didn't return exact)
+            "tokens": {
+                "generator_out": gen_out_tokens,
+                "generator_in": gen_in_tokens,
+                "comment_out": comment_out_tokens,
+                "comment_in": comment_in_tokens,
+                "refine_out": refine_out_tokens,
+                "refine_in": refine_in_tokens,
+                "beautify_out": beautify_out_tokens,
+                "beautify_in": beautify_in_tokens,
+                "review_out": review_out_tokens,
+                "review_in": review_in_tokens,
+            }
         }
 
         result_q.put(payload)
@@ -92,13 +105,27 @@ def writer(result_q: Queue, total: int):
 
     jsonl_path = os.path.join(OUTPUT_DIR, "dataset.jsonl")
     csv_path = os.path.join(OUTPUT_DIR, "review.csv")
+    tokens_csv = os.path.join(OUTPUT_DIR, "tokens.csv")
 
     done = 0
     with open(jsonl_path, "w", encoding="utf-8") as fj, \
-         open(csv_path, "w", newline="", encoding="utf-8-sig") as fc:
+         open(csv_path, "w", newline="", encoding="utf-8-sig") as fc, \
+         open(tokens_csv, "w", newline="", encoding="utf-8-sig") as ft:
 
         w = csv.writer(fc)
         w.writerow(["Topic", "Keep", "Reason", "Question"])
+
+        wt = csv.writer(ft)
+        wt.writerow([
+            "Topic",
+            "Generator_in","Generator_out",
+            "Comment_in","Comment_out",
+            "Refine_in","Refine_out",
+            "Beautify_in","Beautify_out",
+            "Review_in","Review_out",
+            "TotalInput","TotalOutput","TotalTokens",
+            "Keep"
+        ])
 
         while done < total:
             r = result_q.get()
@@ -111,6 +138,33 @@ def writer(result_q: Queue, total: int):
                 r["keep"],
                 r["reason"],
                 r["messages"][1]["content"],
+            ])
+
+            toks = r.get("tokens", {})
+            gen_out = int(toks.get("generator_out") or 0)
+            gen_in = int(toks.get("generator_in") or 0)
+            com_out = int(toks.get("comment_out") or 0)
+            com_in = int(toks.get("comment_in") or 0)
+            ref_out = int(toks.get("refine_out") or 0)
+            ref_in = int(toks.get("refine_in") or 0)
+            bea_out = int(toks.get("beautify_out") or 0)
+            bea_in = int(toks.get("beautify_in") or 0)
+            rev_out = int(toks.get("review_out") or 0)
+            rev_in = int(toks.get("review_in") or 0)
+
+            total_input = sum([gen_in, com_in, ref_in, bea_in, rev_in])
+            total_output = sum([gen_out, com_out, ref_out, bea_out, rev_out])
+            total_tokens = total_input + total_output
+
+            wt.writerow([
+                r.get("topic", ""),
+                gen_in, gen_out,
+                com_in, com_out,
+                ref_in, ref_out,
+                bea_in, bea_out,
+                rev_in, rev_out,
+                total_input, total_output, total_tokens,
+                r.get("keep", False),
             ])
 
             print(f"[Writer] 已完成 {done}/{total}")
@@ -156,7 +210,7 @@ if __name__ == "__main__":
     # 可依需求改為較小數量做快速驗證
     try:
         # 嘗試從環境變數帶入數量（可選）
-        total = int(os.getenv("KD_GEN_TOTAL", "1"))
+        total = int(os.getenv("KD_GEN_TOTAL", "10"))
         workers = int(os.getenv("KD_GEN_WORKERS", "1"))
     except Exception:
         total, workers = 1, 1

@@ -1,6 +1,7 @@
 import os
 import json
 from google import genai
+from GeminiAgent.agent.llm_utils import generate_content_with_tokens
 from dotenv import load_dotenv
 
 """
@@ -32,14 +33,11 @@ def review_question(text: str):
     使用 keep_or_not_LLM 審查題目
     回傳：(keep: bool, reason: str)
     """
-    resp = client.models.generate_content(
-        model=REVIEW_MODEL_NAME,
-        contents=f"{REVIEW_PROMPT}\n{text}"
-    )
+    contents = f"{REVIEW_PROMPT}\n{text}"
+    t, out_tokens, in_tokens = generate_content_with_tokens(REVIEW_MODEL_NAME, contents)
 
-    t = resp.text or ""
     try:
-        j = json.loads(t[t.find("{"): t.rfind("}") + 1])
-        return j.get("keep", False), j.get("reason", "")
+      j = json.loads(t[t.find("{"): t.rfind("}") + 1])
+      return j.get("keep", False), j.get("reason", ""), out_tokens, in_tokens
     except Exception:
-        return False, "JSON parse failed"
+      return False, "JSON parse failed", out_tokens, in_tokens

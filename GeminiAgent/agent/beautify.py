@@ -1,5 +1,6 @@
 import os
 from google import genai
+from GeminiAgent.agent.llm_utils import generate_content_with_tokens
 from dotenv import load_dotenv
 
 """
@@ -27,8 +28,6 @@ BEAUTIFY_PROMPT = """
 
 
 def beautify(text: str) -> str:
-    resp = client.models.generate_content(
-        model=BEAUTIFY_MODEL_NAME,
-        contents=f"{BEAUTIFY_PROMPT}\n{text}"
-    )
-    return resp.text.strip() if resp.text else ""
+    contents = f"{BEAUTIFY_PROMPT}\n{text}"
+    text_out, out_tokens, in_tokens = generate_content_with_tokens(BEAUTIFY_MODEL_NAME, contents)
+    return text_out, out_tokens, in_tokens

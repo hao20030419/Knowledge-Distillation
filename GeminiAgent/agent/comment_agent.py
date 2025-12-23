@@ -1,5 +1,6 @@
 import os
 from google import genai
+from GeminiAgent.agent.llm_utils import generate_content_with_tokens
 from dotenv import load_dotenv
 
 """
@@ -33,8 +34,6 @@ def comment_question(original_question: str) -> str:
     """
     使用 comment_LLM 對原始題目給出改進建議
     """
-    resp = client.models.generate_content(
-        model=COMMENT_MODEL_NAME,
-        contents=f"{COMMENT_PROMPT}\n\n題目如下：\n{original_question}"
-    )
-    return resp.text.strip() if resp.text else ""
+    contents = f"{COMMENT_PROMPT}\n\n題目如下：\n{original_question}"
+    text, out_tokens, in_tokens = generate_content_with_tokens(COMMENT_MODEL_NAME, contents)
+    return text, out_tokens, in_tokens
