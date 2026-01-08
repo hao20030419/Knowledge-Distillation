@@ -15,7 +15,7 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 GEN_LLM_NAME = "Gen_LLM"
 GEN_MODEL_NAME = "gemini-3-pro-preview"
-'''
+
 QUESTION_PROMPT = """
 你是一位資工領域的出題專家 (Gen_LLM)。
 請根據主題編寫一道單選題（四選一），並提供題目與四個選項、答案與解析。
@@ -30,8 +30,8 @@ QUESTION_PROMPT = """
 答案：X
 解析：xxxx
 """
-'''
-QUESTION_PROMPT = ""
+
+
 
 # 人類語氣的 prompt 範本，供隨機挑選以產生多樣化的 QUESTION_PROMPT。
 # 這些範本模仿自然講話方式（Alpaca-style augmentation）。
