@@ -10,6 +10,10 @@ from transformers import (
 from transformers.modeling_utils import unwrap_model
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 import torch
+import os
+
+# 強制使用 GPU
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 try:
     from bitsandbytes import __version__ as bnb_version
     from transformers import BitsAndBytesConfig
@@ -101,13 +105,13 @@ def main():
             bnb_4bit_compute_dtype=torch.float16,
         )
         load_kwargs["quantization_config"] = bnb_config
-        load_kwargs["device_map"] = "auto"
+        load_kwargs["device_map"] = "cuda" if torch.cuda.is_available() else "cpu"
     elif args.load_in_8bit:
-        # 8-bit via load_in_8bit and device_map auto
+        # 8-bit via load_in_8bit and device_map
         load_kwargs["load_in_8bit"] = True
-        load_kwargs["device_map"] = "auto"
+        load_kwargs["device_map"] = "cuda" if torch.cuda.is_available() else "cpu"
     else:
-        load_kwargs["device_map"] = "auto" if torch.cuda.is_available() else None
+        load_kwargs["device_map"] = "cuda" if torch.cuda.is_available() else "cpu"
         load_kwargs["torch_dtype"] = torch.float16 if torch.cuda.is_available() else torch.float32
 
     model = AutoModelForCausalLM.from_pretrained(
