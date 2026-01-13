@@ -10,7 +10,7 @@ pip install -r fine-tune/requirements.txt
 
 ```bash
 python fine-tune/train.py \
-  --model_name_or_path Qwen/qwen-2.5-7b-instruct \
+  --model_name_or_path Qwen/Qwen2.5-7B-Instruct \
   --dataset_path GeminiAgent/results/clean_dataset.jsonl \
   --output_dir ./checkpoint-qwen-ft \
   --num_train_epochs 1 \

@@ -105,11 +105,10 @@ def main():
             bnb_4bit_compute_dtype=torch.float16,
         )
         load_kwargs["quantization_config"] = bnb_config
-        load_kwargs["device_map"] = "cuda" if torch.cuda.is_available() else "cpu"
+        # 不設 device_map，讓 bitsandbytes 自動管理
     elif args.load_in_8bit:
-        # 8-bit via load_in_8bit and device_map
+        # 8-bit 不設 device_map，讓 bitsandbytes 自動管理
         load_kwargs["load_in_8bit"] = True
-        load_kwargs["device_map"] = "cuda" if torch.cuda.is_available() else "cpu"
     else:
         load_kwargs["device_map"] = "cuda" if torch.cuda.is_available() else "cpu"
         load_kwargs["torch_dtype"] = torch.float16 if torch.cuda.is_available() else torch.float32
