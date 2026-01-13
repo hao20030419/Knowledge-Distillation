@@ -209,3 +209,9 @@ __marimo__/
 # result
 /GeminiAgent/results/
 /GPTAgent/results/
+
+# training checkpoints
+checkpoint-*/
+**/checkpoint-*/
+**/*.pt
+**/*.safetensors
