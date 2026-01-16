@@ -1,5 +1,6 @@
 import argparse
 import time
+import random
 from evaluation.utils import (
     load_finetuned_model,
     gen_from_finetuned,
@@ -30,52 +31,85 @@ def main():
         q_ft = gen_from_finetuned(gen, prompt)
         q_gem, _, _ = gen_from_gemini(prompt)
 
-        # Now ask both models to choose which question is better (A = finetuned, B = gemini)
-        # First: Gemini judge
+        # Randomize assignment to A/B for double-blind
+        a_is_ft = random.choice([True, False])
+        if a_is_ft:
+            A_text = q_ft
+            B_text = q_gem
+        else:
+            A_text = q_gem
+            B_text = q_ft
+
+        # Gemini judge (sees A/B without source labels)
         gemini_judge_prompt = (
-            f"下面有兩個題目，請比較並選出較好的題目（以清晰度、正確性、教學價值為準）。請直接輸出 'Winner: A' 或 'Winner: B' 並在上一行提供一句簡短理由。\n\n"
+            "下面有兩個題目，請比較並選出較好的題目（以清晰度、正確性、教學價值為準）。請直接輸出 'Winner: A' 或 'Winner: B' 並在上一行提供一句簡短理由。\n\n"
             "A:\n"
-            f"{q_ft}\n\n"
+            f"{A_text}\n\n"
             "B:\n"
-            f"{q_gem}\n\n"
+            f"{B_text}\n\n"
         )
         gemini_judge_text, _, _ = gen_from_gemini(gemini_judge_prompt)
         winner_gemini = parse_winner_from_text(gemini_judge_text)
 
-        # Second: finetuned model judge (we prompt it similarly)
+        # Finetuned model judge (also sees A/B without source labels)
         judge_prompt_ft = (
-            f"下面有兩個題目，請比較並選出較好的題目（以清晰度、正確性、教學價值為準）。請直接輸出 'Winner: A' 或 'Winner: B' 並在上一行提供一句簡短理由。\n\n"
+            "下面有兩個題目，請比較並選出較好的題目（以清晰度、正確性、教學價值為準）。請直接輸出 'Winner: A' 或 'Winner: B' 並在上一行提供一句簡短理由。\n\n"
             "A:\n"
-            f"{q_ft}\n\n"
+            f"{A_text}\n\n"
             "B:\n"
-            f"{q_gem}\n\n"
+            f"{B_text}\n\n"
         )
         ft_judge_text = gen_from_finetuned(gen, judge_prompt_ft)
         winner_ft = parse_winner_from_text(ft_judge_text)
 
-        # tally: each judge gives 1 point to winner
-        if winner_gemini == "A":
-            score_ft += 1
-        elif winner_gemini == "B":
-            score_gemini += 1
+        # Map judges' choices back to model scores for this round
+        round_score_ft = 0
+        round_score_gem = 0
 
+        # Gemini judge vote
+        if winner_gemini == "A":
+            if a_is_ft:
+                round_score_ft += 1
+            else:
+                round_score_gem += 1
+        elif winner_gemini == "B":
+            if a_is_ft:
+                round_score_gem += 1
+            else:
+                round_score_ft += 1
+
+        # Finetuned judge vote
         if winner_ft == "A":
-            score_ft += 1
+            if a_is_ft:
+                round_score_ft += 1
+            else:
+                round_score_gem += 1
         elif winner_ft == "B":
-            score_gemini += 1
+            if a_is_ft:
+                round_score_gem += 1
+            else:
+                round_score_ft += 1
+
+        score_ft += round_score_ft
+        score_gemini += round_score_gem
 
         rows.append({
             "round": i + 1,
             "topic": topic,
-            "question_finetuned": q_ft,
-            "question_gemini": q_gem,
+            "A_is_finetuned": a_is_ft,
+            "question_A": A_text,
+            "question_B": B_text,
             "gemini_judge": gemini_judge_text.replace("\n", "\\n")[:10000],
             "gemini_choice": winner_gemini,
             "finetuned_judge": ft_judge_text.replace("\n", "\\n")[:10000],
             "finetuned_choice": winner_ft,
+            "score_A": (1 if winner_gemini == "A" else 0) + (1 if winner_ft == "A" else 0),
+            "score_B": (1 if winner_gemini == "B" else 0) + (1 if winner_ft == "B" else 0),
+            "score_finetuned": round_score_ft,
+            "score_gemini": round_score_gem,
         })
 
-        print(f"[Pairwise] round {i+1}: gemini->{winner_gemini}, ft->{winner_ft}")
+        print(f"[Pairwise] round {i+1}: A_is_ft={a_is_ft}, ft_round={round_score_ft}, gem_round={round_score_gem}")
         time.sleep(1)
 
     totals = {"score_finetuned": score_ft, "score_gemini": score_gemini}
