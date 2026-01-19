@@ -34,7 +34,11 @@ def load_finetuned_model(model_dir: str):
         # fallback to direct load
         model = AutoModelForCausalLM.from_pretrained(model_dir)
 
-    gen = pipeline("text-generation", model=model, tokenizer=tokenizer, device=0 if torch.cuda.is_available() else -1)
+    
+    # When the model is loaded with `accelerate` it manages device placement,
+    # so avoid passing the `device` argument to `pipeline()` which would try
+    # to move the model again and raise an error.
+    gen = pipeline("text-generation", model=model, tokenizer=tokenizer)
     return model, tokenizer, gen
 
 
