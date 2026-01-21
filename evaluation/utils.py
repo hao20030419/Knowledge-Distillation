@@ -80,25 +80,50 @@ def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 512)
         if hasattr(openai, "OpenAI"):
             # new SDK
             client = openai.OpenAI(api_key=api_key)
-            resp = client.chat.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=0.0,
-            )
+            # Newer SDK exposes chat completions under client.chat.completions
+            # Try that first; if not available, fall back to client.chat.create
+            try:
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                )
+            except Exception:
+                resp = client.chat.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                )
             # resp may be dict-like or object-like
             try:
-                choices = resp.get("choices", []) if isinstance(resp, dict) else getattr(resp, "choices", [])
+                # resp can be dict-like or object-like; normalize access
+                if isinstance(resp, dict):
+                    choices = resp.get("choices", [])
+                else:
+                    # object-like: try attribute access
+                    choices = getattr(resp, "choices", []) or getattr(resp, "data", [])
+                if not choices:
+                    # some SDKs nest choices under data
+                    choices = []
             except Exception:
                 choices = []
+
             if choices:
-                if isinstance(choices[0], dict):
-                    text = choices[0].get("message", {}).get("content", "")
+                first = choices[0]
+                if isinstance(first, dict):
+                    # legacy dict-style
+                    text = first.get("message", {}).get("content", "") or first.get("text", "")
                 else:
+                    # object-style: try common attributes
                     try:
-                        text = choices[0].message.content
+                        text = first.message.content
                     except Exception:
-                        text = str(choices[0])
+                        try:
+                            text = first.get("message", {}).get("content", "")
+                        except Exception:
+                            text = str(first)
             else:
                 text = ""
             return text.strip()
