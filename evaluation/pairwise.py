@@ -64,7 +64,7 @@ def main():
 
         # GPT judge (sees A/B without source labels)
         gemini_judge_prompt = (
-            "下面有兩個題目，請比較並選出較好的題目（以清晰度、正確性、教學價值為準）。請直接輸出 'Winner: A' 或 'Winner: B' 並在上一行提供一句簡短理由。\n\n"
+            "下面有兩個題目，請比較並選出較好的題目（以清晰度、正確性、教學價值為準）。請直接輸出 'Winner: A' 或 'Winner: B' 並在上一行提供理由。\n\n"
             "A:\n"
             f"{A_text}\n\n"
             "B:\n"
@@ -73,44 +73,19 @@ def main():
         gemini_judge_text = gen_from_gpt(gemini_judge_prompt)
         winner_gemini = parse_winner_from_text(gemini_judge_text)
 
-        # Finetuned model judge (also sees A/B without source labels)
-        judge_prompt_ft = (
-            "下面有兩個題目，請比較並選出較好的題目（以清晰度、正確性、教學價值為準）。請直接輸出 'Winner: A' 或 'Winner: B' 並在上一行提供一句簡短理由。\n\n"
-            "A:\n"
-            f"{A_text}\n\n"
-            "B:\n"
-            f"{B_text}\n\n"
-        )
-        ft_judge_text = gen_from_finetuned(gen, judge_prompt_ft)
-        winner_ft = parse_winner_from_text(ft_judge_text)
-
-        # Map judges' choices back to model scores for this round
+        # Map GPT judge choice back to model scores for this round
         round_score_ft = 0
         round_score_gem = 0
-
-        # GPT judge vote (variable kept as winner_gemini for backward compat with CSV keys)
         if winner_gemini == "A":
             if a_is_ft:
-                round_score_ft += 1
+                round_score_ft = 1
             else:
-                round_score_gem += 1
+                round_score_gem = 1
         elif winner_gemini == "B":
             if a_is_ft:
-                round_score_gem += 1
+                round_score_gem = 1
             else:
-                round_score_ft += 1
-
-        # Finetuned judge vote
-        if winner_ft == "A":
-            if a_is_ft:
-                round_score_ft += 1
-            else:
-                round_score_gem += 1
-        elif winner_ft == "B":
-            if a_is_ft:
-                round_score_gem += 1
-            else:
-                round_score_ft += 1
+                round_score_ft = 1
 
         score_ft += round_score_ft
         score_gemini += round_score_gem
@@ -123,10 +98,6 @@ def main():
             "question_B": B_text,
             "gpt_judge": gemini_judge_text.replace("\n", "\\n")[:10000],
             "gpt_choice": winner_gemini,
-            "finetuned_judge": ft_judge_text.replace("\n", "\\n")[:10000],
-            "finetuned_choice": winner_ft,
-            "score_A": (1 if winner_gemini == "A" else 0) + (1 if winner_ft == "A" else 0),
-            "score_B": (1 if winner_gemini == "B" else 0) + (1 if winner_ft == "B" else 0),
             "score_finetuned": round_score_ft,
             "score_gemini": round_score_gem,
         }
