@@ -140,7 +140,6 @@ def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 512)
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     max_completion_tokens=max_tokens,
-                    temperature=0.0,
                 )
             except Exception as e_chat:
                 # try the Responses API as a fallback (different parameter names)
@@ -149,7 +148,6 @@ def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 512)
                         model=model,
                         input=[{"role": "user", "content": prompt}],
                         max_output_tokens=max_tokens,
-                        temperature=0.0,
                     )
                 except Exception as e_resp:
                     raise RuntimeError(f"OpenAI API chat and responses attempts failed: {e_chat}; {e_resp}")
@@ -163,7 +161,6 @@ def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 512)
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
-            temperature=0.0,
         )
         choices = resp.get("choices") or []
         if choices:
