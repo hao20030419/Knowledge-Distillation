@@ -22,7 +22,7 @@ def main():
 
     rows = []
     total_ft = 0
-    total_gpt = 0
+    total_gemini = 0
 
     import random
 
@@ -69,18 +69,18 @@ def main():
         score_b = scores[1] if len(scores) >= 2 else -1
 
         # map scores back to models
-        score_finetuned = score_gpt = -1
+        score_finetuned = score_gemini = -1
         if a_is_ft:
             score_finetuned = score_a
-            score_gpt = score_b
+            score_gemini = score_b
         else:
             score_finetuned = score_b
-            score_gpt = score_a
+            score_gemini = score_a
 
         if score_finetuned > 0:
             total_ft += score_finetuned
-        if score_gpt > 0:
-            total_gpt += score_gpt
+        if score_gemini > 0:
+            total_gemini += score_gemini
 
         rows.append({
             "round": i + 1,
@@ -91,14 +91,14 @@ def main():
             "score_A": score_a,
             "score_B": score_b,
             "score_finetuned": score_finetuned,
-            "score_gpt": score_gpt,
+            "score_gemini": score_gemini,
             "judge_raw": judge_text.replace("\n", "\\n")[:10000],
         })
 
-        print(f"[G-Eval] round {i+1}: A_is_ft={a_is_ft}, ft={score_finetuned}, gpt={score_gpt}")
+        print(f"[G-Eval] round {i+1}: A_is_ft={a_is_ft}, ft={score_finetuned}, gemini={score_gemini}")
         time.sleep(1)
 
-    totals = {"total_finetuned": total_ft, "total_gpt": total_gpt}
+    totals = {"total_finetuned": total_ft, "total_gemini": total_gemini}
     save_rounds_csv(args.output_csv, rows, totals)
     print("Saved results to", args.output_csv)
 
