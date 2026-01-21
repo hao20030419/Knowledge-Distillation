@@ -76,56 +76,85 @@ def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 512)
         raise RuntimeError("OpenAI API key not found in OPENAI_API_KEY, GPT_API_KEY or QUESTION_MODEL_API_KEY environment variable.")
 
     # Support both new openai.OpenAI client and legacy openai.ChatCompletion
+    def _extract_text(resp):
+        try:
+            if isinstance(resp, dict):
+                if "choices" in resp and resp["choices"]:
+                    first = resp["choices"][0]
+                    if isinstance(first, dict):
+                        return first.get("message", {}).get("content") or first.get("text") or ""
+                if "output_text" in resp:
+                    return resp.get("output_text", "")
+                if "output" in resp and resp["output"]:
+                    out0 = resp["output"][0]
+                    if isinstance(out0, dict):
+                        cont = out0.get("content") or out0.get("text")
+                        if isinstance(cont, list) and cont:
+                            texts = []
+                            for c in cont:
+                                if isinstance(c, dict) and "text" in c:
+                                    texts.append(c["text"])
+                                elif isinstance(c, str):
+                                    texts.append(c)
+                            return "\n".join(texts)
+                    return str(out0)
+                return ""
+
+            # object-like
+            choices = getattr(resp, "choices", None)
+            if choices:
+                first = choices[0]
+                try:
+                    return first.message.content
+                except Exception:
+                    try:
+                        return first.get("message", {}).get("content", "")
+                    except Exception:
+                        return str(first)
+
+            output = getattr(resp, "output", None)
+            if output:
+                first = output[0]
+                cont = getattr(first, "content", None)
+                if isinstance(cont, list) and cont:
+                    texts = []
+                    for c in cont:
+                        if isinstance(c, dict) and "text" in c:
+                            texts.append(c["text"])
+                        elif isinstance(c, str):
+                            texts.append(c)
+                    return "\n".join(texts)
+                try:
+                    return str(first)
+                except Exception:
+                    return ""
+        except Exception:
+            return ""
+
     try:
         if hasattr(openai, "OpenAI"):
-            # new SDK
             client = openai.OpenAI(api_key=api_key)
-            # Newer SDK exposes chat completions under client.chat.completions
-            # Try that first; if not available, fall back to client.chat.create
+            # prefer chat.completions with max_completion_tokens for newer models
             try:
                 resp = client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
+                    max_completion_tokens=max_tokens,
                     temperature=0.0,
                 )
-            except Exception:
-                resp = client.chat.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    temperature=0.0,
-                )
-            # resp may be dict-like or object-like
-            try:
-                # resp can be dict-like or object-like; normalize access
-                if isinstance(resp, dict):
-                    choices = resp.get("choices", [])
-                else:
-                    # object-like: try attribute access
-                    choices = getattr(resp, "choices", []) or getattr(resp, "data", [])
-                if not choices:
-                    # some SDKs nest choices under data
-                    choices = []
-            except Exception:
-                choices = []
+            except Exception as e_chat:
+                # try the Responses API as a fallback (different parameter names)
+                try:
+                    resp = client.responses.create(
+                        model=model,
+                        input=[{"role": "user", "content": prompt}],
+                        max_output_tokens=max_tokens,
+                        temperature=0.0,
+                    )
+                except Exception as e_resp:
+                    raise RuntimeError(f"OpenAI API chat and responses attempts failed: {e_chat}; {e_resp}")
 
-            if choices:
-                first = choices[0]
-                if isinstance(first, dict):
-                    # legacy dict-style
-                    text = first.get("message", {}).get("content", "") or first.get("text", "")
-                else:
-                    # object-style: try common attributes
-                    try:
-                        text = first.message.content
-                    except Exception:
-                        try:
-                            text = first.get("message", {}).get("content", "")
-                        except Exception:
-                            text = str(first)
-            else:
-                text = ""
+            text = _extract_text(resp)
             return text.strip()
 
         # legacy SDK fallback
