@@ -58,8 +58,9 @@ def gen_from_gemini(prompt: str, model: str = "gemini-3-pro-preview") -> Tuple[s
 
 def parse_score_from_text(text: str) -> int:
     """Extract an integer score 1-10 from text. Returns -1 if not found."""
-    # search for integers 1-10
-    m = re.search(r"\b([1-9]|10)\b", text)
+    # Prefer explicit 'Score' labels (e.g. 'Score: 8' or 'Score：8').
+    # Match both ASCII and full-width colon/dash separators and allow whitespace.
+    m = re.search(r"Score\s*[:：-]?\s*(\d{1,2})", text, flags=re.IGNORECASE)
     if m:
         try:
             v = int(m.group(1))
@@ -67,6 +68,18 @@ def parse_score_from_text(text: str) -> int:
                 return v
         except Exception:
             return -1
+
+    # Fallback: look for the pattern 'Score ... X' (Score before the number)
+    m2 = re.search(r"Score[^\d]{0,6}(\d{1,2})", text, flags=re.IGNORECASE)
+    if m2:
+        try:
+            v = int(m2.group(1))
+            if 1 <= v <= 10:
+                return v
+        except Exception:
+            return -1
+
+    # If no explicit Score label is found, do not pick arbitrary standalone numbers.
     return -1
 
 

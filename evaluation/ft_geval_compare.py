@@ -28,7 +28,8 @@ def main():
 
     for i in range(args.repeats):
         topic = random_topic()
-        prompt = f"請用繁體中文根據主題「{topic}」出一道單選題（四選一），包含題目、選項(A/B/C/D)、答案以及簡短解析。"
+        prompt = f"請提供一題關於 {topic} 的四選一單選題。"
+        #prompt = f"請用繁體中文根據「{topic}」出一道單選題（四選一），包含題目、選項(A/B/C/D)、答案以及簡短解析。"
 
         q_before = gen_from_finetuned(gen_before, prompt)
         q_after = gen_from_finetuned(gen_after, prompt)
