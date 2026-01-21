@@ -26,6 +26,24 @@ def main():
     total_before = 0
     total_after = 0
 
+    # Prepare CSV for incremental writes
+    fieldnames = [
+        "round",
+        "topic",
+        "A_is_after",
+        "question_A",
+        "question_B",
+        "score_A",
+        "score_B",
+        "score_before",
+        "score_after",
+        "judge_raw",
+    ]
+    csv_f = open(args.output_csv, "w", encoding="utf-8-sig", newline="")
+    csv_writer = __import__("csv").DictWriter(csv_f, fieldnames=fieldnames)
+    csv_writer.writeheader()
+    csv_f.flush()
+
     for i in range(args.repeats):
         topic = random_topic()
         prompt = f"請提供一題關於 {topic} 的四選一單選題。"
@@ -80,7 +98,7 @@ def main():
         if score_after > 0:
             total_after += score_after
 
-        rows.append({
+        row = {
             "round": i + 1,
             "topic": topic,
             "A_is_after": a_is_after,
@@ -91,13 +109,22 @@ def main():
             "score_before": score_before,
             "score_after": score_after,
             "judge_raw": judge_text.replace("\n", "\\n")[:10000],
-        })
+        }
+        rows.append(row)
+
+        # write immediately
+        csv_writer.writerow(row)
+        csv_f.flush()
 
         print(f"[FT G-Eval] round {i+1}: A_is_after={a_is_after}, before={score_before}, after={score_after}")
         time.sleep(1)
 
     totals = {"total_before": total_before, "total_after": total_after}
-    save_rounds_csv(args.output_csv, rows, totals)
+    csv_f.write("\n")
+    csv_f.write("Totals:\n")
+    for k, v in totals.items():
+        csv_f.write(f"{k},{v}\n")
+    csv_f.close()
     print("Saved results to", args.output_csv)
 
 

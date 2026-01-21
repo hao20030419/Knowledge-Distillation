@@ -25,6 +25,27 @@ def main():
     score_ft = 0
     score_gemini = 0
 
+    # Prepare CSV for incremental writes
+    fieldnames = [
+        "round",
+        "topic",
+        "A_is_finetuned",
+        "question_A",
+        "question_B",
+        "gpt_judge",
+        "gpt_choice",
+        "finetuned_judge",
+        "finetuned_choice",
+        "score_A",
+        "score_B",
+        "score_finetuned",
+        "score_gemini",
+    ]
+    csv_f = open(args.output_csv, "w", encoding="utf-8-sig", newline="")
+    csv_writer = __import__("csv").DictWriter(csv_f, fieldnames=fieldnames)
+    csv_writer.writeheader()
+    csv_f.flush()
+
     for i in range(args.repeats):
         topic = random_topic()
         prompt = f"請用繁體中文根據主題「{topic}」出一道單選題（四選一），包含題目、選項(A/B/C/D)、答案以及簡短解析。"
@@ -94,7 +115,7 @@ def main():
         score_ft += round_score_ft
         score_gemini += round_score_gem
 
-        rows.append({
+        row = {
             "round": i + 1,
             "topic": topic,
             "A_is_finetuned": a_is_ft,
@@ -108,13 +129,22 @@ def main():
             "score_B": (1 if winner_gemini == "B" else 0) + (1 if winner_ft == "B" else 0),
             "score_finetuned": round_score_ft,
             "score_gemini": round_score_gem,
-        })
+        }
+        rows.append(row)
+
+        # write immediately
+        csv_writer.writerow(row)
+        csv_f.flush()
 
         print(f"[Pairwise] round {i+1}: A_is_ft={a_is_ft}, ft_round={round_score_ft}, gem_round={round_score_gem}")
         time.sleep(1)
 
     totals = {"score_finetuned": score_ft, "score_gemini": score_gemini}
-    save_rounds_csv(args.output_csv, rows, totals)
+    csv_f.write("\n")
+    csv_f.write("Totals:\n")
+    for k, v in totals.items():
+        csv_f.write(f"{k},{v}\n")
+    csv_f.close()
     print("Saved results to", args.output_csv)
 
 

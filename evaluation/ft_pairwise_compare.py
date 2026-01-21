@@ -26,6 +26,23 @@ def main():
     score_before = 0
     score_after = 0
 
+    # Prepare CSV for incremental writes
+    fieldnames = [
+        "round",
+        "topic",
+        "A_is_after",
+        "question_A",
+        "question_B",
+        "gemini_judge",
+        "gemini_choice",
+        "score_before",
+        "score_after",
+    ]
+    csv_f = open(args.output_csv, "w", encoding="utf-8-sig", newline="")
+    csv_writer = __import__("csv").DictWriter(csv_f, fieldnames=fieldnames)
+    csv_writer.writeheader()
+    csv_f.flush()
+
     for i in range(args.repeats):
         topic = random_topic()
         prompt = f"請提供一題關於 {topic} 的四選一單選題。"
@@ -70,7 +87,7 @@ def main():
         score_before += round_before
         score_after += round_after
 
-        rows.append({
+        row = {
             "round": i + 1,
             "topic": topic,
             "A_is_after": a_is_after,
@@ -80,13 +97,22 @@ def main():
             "gemini_choice": winner_gemini,
             "score_before": round_before,
             "score_after": round_after,
-        })
+        }
+        rows.append(row)
+
+        # write immediately
+        csv_writer.writerow(row)
+        csv_f.flush()
 
         print(f"[FT Pairwise] round {i+1}: A_is_after={a_is_after}, before_round={round_before}, after_round={round_after}")
         time.sleep(1)
 
     totals = {"score_before": score_before, "score_after": score_after}
-    save_rounds_csv(args.output_csv, rows, totals)
+    csv_f.write("\n")
+    csv_f.write("Totals:\n")
+    for k, v in totals.items():
+        csv_f.write(f"{k},{v}\n")
+    csv_f.close()
     print("Saved results to", args.output_csv)
 
 
