@@ -71,12 +71,40 @@ def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 512)
     if not OPENAI_AVAILABLE:
         raise RuntimeError("openai package is not installed. Install with `pip install openai` to use GPT judge.")
 
-    api_key = os.getenv("QUESTION_MODEL_API_KEY") or os.getenv("QUESTION_MODEL_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GPT_API_KEY") or os.getenv("QUESTION_MODEL_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI API key not found in OPENAI_API_KEY or GPT_API_KEY environment variable.")
-    openai.api_key = api_key
+        raise RuntimeError("OpenAI API key not found in OPENAI_API_KEY, GPT_API_KEY or QUESTION_MODEL_API_KEY environment variable.")
 
+    # Support both new openai.OpenAI client and legacy openai.ChatCompletion
     try:
+        if hasattr(openai, "OpenAI"):
+            # new SDK
+            client = openai.OpenAI(api_key=api_key)
+            resp = client.chat.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=0.0,
+            )
+            # resp may be dict-like or object-like
+            try:
+                choices = resp.get("choices", []) if isinstance(resp, dict) else getattr(resp, "choices", [])
+            except Exception:
+                choices = []
+            if choices:
+                if isinstance(choices[0], dict):
+                    text = choices[0].get("message", {}).get("content", "")
+                else:
+                    try:
+                        text = choices[0].message.content
+                    except Exception:
+                        text = str(choices[0])
+            else:
+                text = ""
+            return text.strip()
+
+        # legacy SDK fallback
+        openai.api_key = api_key
         resp = openai.ChatCompletion.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
