@@ -4,6 +4,7 @@ from evaluation.utils import (
     load_finetuned_model,
     gen_from_finetuned,
     gen_from_gemini,
+    gen_from_gpt,
     parse_score_from_text,
     random_topic,
     save_rounds_csv,
@@ -21,7 +22,7 @@ def main():
 
     rows = []
     total_ft = 0
-    total_gemini = 0
+    total_gpt = 0
 
     import random
 
@@ -42,7 +43,7 @@ def main():
             A_text = q_gem
             B_text = q_ft
 
-        # Judge (Gemini) with CoT; do NOT reveal sources
+        # Judge (GPT) with CoT; do NOT reveal sources
         judge_prompt = (
             "你是評分員。請以 Chain-of-Thought (先說明理由) 的方式，分別對下面兩份試題從 1 到 10 (整數) 評分，10 為最佳。\n\n"
             f"Topic: {topic}\n\n"
@@ -53,7 +54,7 @@ def main():
             "請先給出每題的詳細評分理由，再在各自理由最後一行回報 'Score: X'（X 為 1-10 的整數）。只要數字即可作為分數行的結尾。"
         )
 
-        judge_text, _, _ = gen_from_gemini(judge_prompt)
+        judge_text = gen_from_gpt(judge_prompt)
 
         # extract two scores sequentially
         scores = []
@@ -68,18 +69,18 @@ def main():
         score_b = scores[1] if len(scores) >= 2 else -1
 
         # map scores back to models
-        score_finetuned = score_gemini = -1
+        score_finetuned = score_gpt = -1
         if a_is_ft:
             score_finetuned = score_a
-            score_gemini = score_b
+            score_gpt = score_b
         else:
             score_finetuned = score_b
-            score_gemini = score_a
+            score_gpt = score_a
 
         if score_finetuned > 0:
             total_ft += score_finetuned
-        if score_gemini > 0:
-            total_gemini += score_gemini
+        if score_gpt > 0:
+            total_gpt += score_gpt
 
         rows.append({
             "round": i + 1,
@@ -90,14 +91,14 @@ def main():
             "score_A": score_a,
             "score_B": score_b,
             "score_finetuned": score_finetuned,
-            "score_gemini": score_gemini,
+            "score_gpt": score_gpt,
             "judge_raw": judge_text.replace("\n", "\\n")[:10000],
         })
 
-        print(f"[G-Eval] round {i+1}: A_is_ft={a_is_ft}, ft={score_finetuned}, gemini={score_gemini}")
+        print(f"[G-Eval] round {i+1}: A_is_ft={a_is_ft}, ft={score_finetuned}, gpt={score_gpt}")
         time.sleep(1)
 
-    totals = {"total_finetuned": total_ft, "total_gemini": total_gemini}
+    totals = {"total_finetuned": total_ft, "total_gpt": total_gpt}
     save_rounds_csv(args.output_csv, rows, totals)
     print("Saved results to", args.output_csv)
 

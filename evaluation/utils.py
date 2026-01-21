@@ -7,6 +7,12 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from peft import PeftModel
 
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except Exception:
+    OPENAI_AVAILABLE = False
+
 # reuse existing Gemini helper
 from GeminiAgent.agent.llm_utils import generate_content_with_tokens
 from GeminiAgent.agent.generator import random_topic
@@ -54,6 +60,37 @@ def gen_from_finetuned(gen_pipeline, prompt: str, max_new_tokens: int = 256) -> 
 def gen_from_gemini(prompt: str, model: str = "gemini-3-pro-preview") -> Tuple[str, int, int]:
     text, out_tokens, in_tokens = generate_content_with_tokens(model, prompt)
     return text.strip(), out_tokens, in_tokens
+
+
+def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 512) -> str:
+    """Call OpenAI Chat API (if available) and return the assistant text.
+
+    Returns the generated text. If `openai` is not installed or API key missing,
+    raises RuntimeError with an explanatory message.
+    """
+    if not OPENAI_AVAILABLE:
+        raise RuntimeError("openai package is not installed. Install with `pip install openai` to use GPT judge.")
+
+    api_key = os.getenv("QUESTION_MODEL_API_KEY") or os.getenv("QUESTION_MODEL_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI API key not found in OPENAI_API_KEY or GPT_API_KEY environment variable.")
+    openai.api_key = api_key
+
+    try:
+        resp = openai.ChatCompletion.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=0.0,
+        )
+        choices = resp.get("choices") or []
+        if choices:
+            text = choices[0].get("message", {}).get("content", "")
+        else:
+            text = ""
+        return text.strip()
+    except Exception as e:
+        raise RuntimeError(f"OpenAI API call failed: {e}")
 
 
 def parse_score_from_text(text: str) -> int:

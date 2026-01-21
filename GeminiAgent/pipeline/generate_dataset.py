@@ -70,7 +70,17 @@ def generate_dataset(total=1, workers=1):
     tokens_csv = os.path.join(OUTPUT_DIR, "tokens.csv")
 
     # 先計算現有的題目數量，再判斷是否需要繼續生成。
-    existing = _count_and_repair_jsonl(jsonl_path)
+    # If a cleaned dataset exists (clean_dataset.jsonl), prefer its count
+    # because the cleaning step may have removed some items.
+    clean_path = os.path.join(OUTPUT_DIR, "clean_dataset_3000.jsonl")
+    existing_clean = _count_and_repair_jsonl(clean_path) if os.path.exists(clean_path) else 0
+
+    if existing_clean > 0:
+        existing = existing_clean
+        print(f"[Generator] 使用已清理資料計數：clean_dataset.jsonl 有 {existing} 條。")
+    else:
+        existing = _count_and_repair_jsonl(jsonl_path)
+
     if existing >= total:
         print(f"[Generator] 目標數量 {total} 已達成（現有 {existing} 條），無需生成。")
         return

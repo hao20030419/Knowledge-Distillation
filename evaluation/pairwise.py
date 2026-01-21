@@ -5,6 +5,7 @@ from evaluation.utils import (
     load_finetuned_model,
     gen_from_finetuned,
     gen_from_gemini,
+    gen_from_gpt,
     parse_winner_from_text,
     random_topic,
     save_rounds_csv,
@@ -40,7 +41,7 @@ def main():
             A_text = q_gem
             B_text = q_ft
 
-        # Gemini judge (sees A/B without source labels)
+        # GPT judge (sees A/B without source labels)
         gemini_judge_prompt = (
             "下面有兩個題目，請比較並選出較好的題目（以清晰度、正確性、教學價值為準）。請直接輸出 'Winner: A' 或 'Winner: B' 並在上一行提供一句簡短理由。\n\n"
             "A:\n"
@@ -48,7 +49,7 @@ def main():
             "B:\n"
             f"{B_text}\n\n"
         )
-        gemini_judge_text, _, _ = gen_from_gemini(gemini_judge_prompt)
+        gemini_judge_text = gen_from_gpt(gemini_judge_prompt)
         winner_gemini = parse_winner_from_text(gemini_judge_text)
 
         # Finetuned model judge (also sees A/B without source labels)
@@ -66,7 +67,7 @@ def main():
         round_score_ft = 0
         round_score_gem = 0
 
-        # Gemini judge vote
+        # GPT judge vote (variable kept as winner_gemini for backward compat with CSV keys)
         if winner_gemini == "A":
             if a_is_ft:
                 round_score_ft += 1
@@ -99,8 +100,8 @@ def main():
             "A_is_finetuned": a_is_ft,
             "question_A": A_text,
             "question_B": B_text,
-            "gemini_judge": gemini_judge_text.replace("\n", "\\n")[:10000],
-            "gemini_choice": winner_gemini,
+            "gpt_judge": gemini_judge_text.replace("\n", "\\n")[:10000],
+            "gpt_choice": winner_gemini,
             "finetuned_judge": ft_judge_text.replace("\n", "\\n")[:10000],
             "finetuned_choice": winner_ft,
             "score_A": (1 if winner_gemini == "A" else 0) + (1 if winner_ft == "A" else 0),
