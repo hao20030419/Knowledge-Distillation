@@ -62,7 +62,7 @@ def gen_from_gemini(prompt: str, model: str = "gemini-3-pro-preview") -> Tuple[s
     return text.strip(), out_tokens, in_tokens
 
 
-def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 512) -> str:
+def gen_from_gpt(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 5000) -> str:
     """Call OpenAI Chat API (if available) and return the assistant text.
 
     Returns the generated text. If `openai` is not installed or API key missing,
