@@ -48,8 +48,19 @@ def load_finetuned_model(model_dir: str):
     return model, tokenizer, gen
 
 
-def gen_from_finetuned(gen_pipeline, prompt: str, max_new_tokens: int = 256) -> str:
-    out = gen_pipeline(prompt, max_new_tokens=max_new_tokens, do_sample=False)
+def gen_from_finetuned(gen_pipeline, prompt: str, max_new_tokens: int = 256, **kwargs) -> str:
+    # defaults
+    generation_kwargs = {"do_sample": False}
+    generation_kwargs.update(kwargs)
+
+    # If sampling parameters are present, force do_sample=True unless strictly disabled
+    if any(k in generation_kwargs for k in ["temperature", "top_p", "top_k"]):
+        if generation_kwargs.get("temperature", 1.0) == 0:
+            generation_kwargs["do_sample"] = False
+        else:
+            generation_kwargs["do_sample"] = True
+
+    out = gen_pipeline(prompt, max_new_tokens=max_new_tokens, **generation_kwargs)
     if isinstance(out, list) and out:
         text = out[0].get("generated_text") or out[0].get("text") or ""
     else:

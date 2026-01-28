@@ -312,7 +312,7 @@ def call_gen_llm(prompt: str) -> tuple:
     return text, out_tokens, in_tokens
 
 
-def augment_prompt_templates(target_total: int = 50, per_template: int = 3) -> list:
+def augment_prompt_templates(target_total: int = 500, per_template: int = 4) -> list:
     """
     使用 LLM 自動擴增 `PROMPT_TEMPLATES`（Alpaca-style self-instruct）。
 
@@ -402,7 +402,7 @@ if __name__ == "__main__":
     # 簡單的 CLI：執行此檔會用 LLM 擴增並儲存到 agent/prompts.json
     out_path = os.path.join(os.path.dirname(__file__), "prompts.json")
     print("Start augmenting prompt templates via Gemini...\nThis will call the API (make sure GEMINI_API_KEY is set).")
-    new_templates = augment_prompt_templates(target_total=100, per_template=4)
+    new_templates = augment_prompt_templates(target_total=500, per_template=4)
     save_prompt_templates(out_path, new_templates)
     print(f"Saved {len(new_templates)} templates to {out_path}")
 

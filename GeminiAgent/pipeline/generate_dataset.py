@@ -65,14 +65,14 @@ def generate_dataset(total=1, workers=1):
     """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    jsonl_path = os.path.join(OUTPUT_DIR, "dataset_2000.jsonl")
+    jsonl_path = os.path.join(OUTPUT_DIR, "dataset_4000.jsonl")
     csv_path = os.path.join(OUTPUT_DIR, "review.csv")
     tokens_csv = os.path.join(OUTPUT_DIR, "tokens.csv")
 
     # 先計算現有的題目數量，再判斷是否需要繼續生成。
     # If a cleaned dataset exists (clean_dataset.jsonl), prefer its count
     # because the cleaning step may have removed some items.
-    clean_path = os.path.join(OUTPUT_DIR, "clean_dataset_3000.jsonl")
+    clean_path = os.path.join(OUTPUT_DIR, "clean_dataset_4000.jsonl")
     existing_clean = _count_and_repair_jsonl(clean_path) if os.path.exists(clean_path) else 0
 
     if existing_clean > 0:
@@ -213,10 +213,10 @@ if __name__ == "__main__":
     # 可依需求改為較小數量做快速驗證
     try:
         # 嘗試從環境變數帶入數量（可選）
-        total = int(os.getenv("KD_GEN_TOTAL", "2000"))
+        total = int(os.getenv("KD_GEN_TOTAL", "4000"))
         workers = int(os.getenv("KD_GEN_WORKERS", "1"))
     except Exception:
-        total, workers = 1, 1
+        total, workers = 4000, 1
 
     print(f"[Runner] 開始生成資料集：total={total}, workers={workers}")
     

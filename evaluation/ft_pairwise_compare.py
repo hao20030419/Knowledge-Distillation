@@ -17,10 +17,18 @@ def main():
     parser.add_argument("--after_dir", type=str, required=True, help="path to model after fine-tune")
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--output_csv", type=str, default="evaluation/ft_pairwise_results.csv")
+    parser.add_argument("--temperature", type=float, default=0.7, help="generation temperature")
+    parser.add_argument("--top_p", type=float, default=0.9, help="generation top_p")
     args = parser.parse_args()
 
     _, _, gen_before = load_finetuned_model(args.before_dir)
     _, _, gen_after = load_finetuned_model(args.after_dir)
+
+    # common generation kwargs
+    gen_kwargs = {
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+    }
 
     rows = []
     score_before = 0
@@ -47,8 +55,8 @@ def main():
         topic = random_topic()
         prompt = f"請提供一題關於 {topic} 的四選一單選題。"
 
-        q_before = gen_from_finetuned(gen_before, prompt)
-        q_after = gen_from_finetuned(gen_after, prompt)
+        q_before = gen_from_finetuned(gen_before, prompt, **gen_kwargs)
+        q_after = gen_from_finetuned(gen_after, prompt, **gen_kwargs)
 
         # double-blind randomization
         a_is_after = random.choice([True, False])

@@ -121,9 +121,9 @@ def extract_question_only(full: str) -> dict:
 # ================================================================
 # 🧹 Clean dataset（不再進行審查，使用 keep flag）
 # ================================================================
-def clean_dataset(source_name="dataset_2000.jsonl"):
+def clean_dataset(source_name="dataset_4000.jsonl"):
     src = os.path.join(OUTPUT_DIR, source_name)
-    out = os.path.join(OUTPUT_DIR, "clean_dataset_2000.jsonl")
+    out = os.path.join(OUTPUT_DIR, "clean_dataset_4000.jsonl")
     removed = os.path.join(OUTPUT_DIR, "removed.jsonl")
 
     keep = drop = 0
