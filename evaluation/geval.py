@@ -16,9 +16,17 @@ def main():
     parser.add_argument("--model_dir", type=str, required=True, help="path to fine-tuned model dir")
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--output_csv", type=str, default="evaluation/geval_results.csv")
+    parser.add_argument("--temperature", type=float, default=0.7, help="generation temperature")
+    parser.add_argument("--top_p", type=float, default=0.9, help="generation top_p")
     args = parser.parse_args()
 
     model, tokenizer, gen = load_finetuned_model(args.model_dir)
+
+    # common generation kwargs
+    gen_kwargs = {
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+    }
 
     rows = []
     total_ft = 0
@@ -49,7 +57,7 @@ def main():
         prompt = f"請提供一題關於 {topic} 的四選一單選題。"
 
         # generate both questions
-        q_ft = gen_from_finetuned(gen, prompt)
+        q_ft = gen_from_finetuned(gen, prompt, **gen_kwargs)
         q_gem, _, _ = gen_from_gemini(prompt)
 
         # Randomize assignment to A/B for double-blind

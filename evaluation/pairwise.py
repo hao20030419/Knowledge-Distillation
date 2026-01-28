@@ -17,9 +17,17 @@ def main():
     parser.add_argument("--model_dir", type=str, required=True, help="path to fine-tuned model dir")
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--output_csv", type=str, default="evaluation/pairwise_results.csv")
+    parser.add_argument("--temperature", type=float, default=0.7, help="generation temperature")
+    parser.add_argument("--top_p", type=float, default=0.9, help="generation top_p")
     args = parser.parse_args()
 
     model, tokenizer, gen = load_finetuned_model(args.model_dir)
+
+    # common generation kwargs
+    gen_kwargs = {
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+    }
 
     rows = []
     score_ft = 0
@@ -34,8 +42,6 @@ def main():
         "question_B",
         "gpt_judge",
         "gpt_choice",
-        "finetuned_judge",
-        "finetuned_choice",
         "score_A",
         "score_B",
         "score_finetuned",
@@ -50,7 +56,7 @@ def main():
         topic = random_topic()
         prompt = f"請用繁體中文根據主題「{topic}」出一道單選題（四選一），包含題目、選項(A/B/C/D)、答案以及簡短解析。"
 
-        q_ft = gen_from_finetuned(gen, prompt)
+        q_ft = gen_from_finetuned(gen, prompt, **gen_kwargs)
         q_gem, _, _ = gen_from_gemini(prompt)
 
         # Randomize assignment to A/B for double-blind
