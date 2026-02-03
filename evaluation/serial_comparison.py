@@ -61,7 +61,7 @@ def main():
             "round": i + 1,
             "topic": topic,
             "template": template,
-            "prompt": prompt_text,
+            "prompt": prompt_text + "，不要寫出答案。",
             "responses": {} # Will store { "model_path": "response_text" }
         })
 
@@ -136,22 +136,26 @@ def main():
             topic = sc["topic"]
             
             # Construct Judge Prompt
-            # We anonymize models as Model 1, Model 2... to keep judging fair (though Gemini naming implies model type anyway)
+            # Shuffle model order per round to avoid fixed ordering bias. We'll
+            # still map parsed 'Model N' back to the actual model path below.
+            shuffled_models = args.model_dirs.copy()
+            random.shuffle(shuffled_models)
+
             judge_prompt = (
-                f"你是評分員。請針對主題「{topic}」的試題生成結果，對下列 {len(model_headers)} 個模型的輸出進行評分 (1-10 分，10 為最佳)。\n"
+                f"你是評分員。請針對主題「{topic}」的試題生成結果，對下列 {len(shuffled_models)} 個模型的輸出進行評分 (1-10 分，10 為最佳)。\n"
                 f"評分標準：題目正確性、選項合理性、解析完整度、是否符合 Prompt 要求。\n\n"
                 f"User Prompt: {sc['prompt']}\n\n"
             )
 
-            for idx, model_path in enumerate(args.model_dirs):
-                m_label = model_headers[idx]
+            for idx, model_path in enumerate(shuffled_models):
+                m_label = os.path.basename(model_path.rstrip("/\\"))
                 resp_text = sc["responses"].get(model_path, "(No Output)")
                 judge_prompt += f"=== Model {idx+1} ({m_label}) ===\n{resp_text}\n\n"
 
             judge_prompt += (
                 "請先對每個模型給出簡短評語，最後在結尾列出分數，格式如下：\n"
             )
-            for idx, m_label in enumerate(model_headers):
+            for idx in range(len(shuffled_models)):
                 judge_prompt += f"Model {idx+1} Score: X\n"
 
             print(f"這是給judge的提示:\n{judge_prompt}")
@@ -185,31 +189,26 @@ def main():
                 except Exception:
                     continue
 
-            # 2) For each expected model, prefer the extracted mapping; otherwise
-            #    search in a small window after the "Model N" occurrence for a score.
-            for idx, m_label in enumerate(model_headers):
+            # 2) For each label index in the judge response (Model 1, Model 2, ...),
+            #    map that label back to the shuffled model presented and assign score.
+            for model_idx in range(1, len(shuffled_models) + 1):
                 score = -1
-                model_idx = idx + 1
                 if model_idx in model_score_map:
                     score = model_score_map[model_idx]
                 else:
-                    # Locate the Model N section and inspect nearby text for a score
                     loc = re.search(fr"Model\s*{model_idx}", judge_response, flags=re.IGNORECASE)
                     if loc:
                         start = loc.end()
-                        # take a reasonable window (next 200 chars or until next 'Model')
                         end_next_model = re.search(r"Model\s*\d+", judge_response[start:], flags=re.IGNORECASE)
                         if end_next_model:
                             end = start + end_next_model.start()
                         else:
                             end = min(len(judge_response), start + 200)
                         window = judge_response[start:end]
-                        # First try to find explicit Score label in the window
                         s = parse_score_from_text(window)
                         if s != -1:
                             score = s
                         else:
-                            # As a last resort, search for the first standalone number 1-10 in the window
                             mnum = re.search(r"\b(10|[1-9])\b", window)
                             if mnum:
                                 try:
@@ -219,6 +218,8 @@ def main():
                                 except Exception:
                                     pass
 
+                mapped_model_path = shuffled_models[model_idx - 1]
+                m_label = os.path.basename(mapped_model_path.rstrip("/\\"))
                 row[f"score_{m_label}"] = score
                 if score > 0:
                     totals[m_label] += score
