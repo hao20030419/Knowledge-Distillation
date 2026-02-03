@@ -42,6 +42,7 @@ def main():
     parser.add_argument("--model_dirs", nargs='+', required=True, help="List of model directories to evaluate sequentially")
     parser.add_argument("--repeats", type=int, default=10, help="Number of test rounds")
     parser.add_argument("--output_csv", type=str, default="evaluation/serial_comparison_results.csv")
+    parser.add_argument("--responses_dir", type=str, default="evaluation/responses", help="Directory to save model responses")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--load_in_8bit", action="store_true")
@@ -73,6 +74,11 @@ def main():
         "top_p": args.top_p,
     }
 
+    # Ensure responses directory exists
+    responses_dir = args.responses_dir
+    if responses_dir:
+        os.makedirs(responses_dir, exist_ok=True)
+
     for model_path in args.model_dirs:
         model_name = os.path.basename(model_path.rstrip("/\\"))
         print(f"\n--- Loading Model: {model_name} ({model_path}) ---")
@@ -89,15 +95,17 @@ def main():
             print(f"Generating {len(scenarios)} responses...")
             for idx, sc in enumerate(scenarios):
                 resp = gen_from_finetuned(gen, sc["prompt"], **generation_kwargs)
-                sc["responses"][model_path] = resp
-                # Print each model's response to the console for inspection
-                '''
+                # Write full response to disk immediately to avoid keeping large strings in memory
+                model_base = os.path.basename(model_path.rstrip("/\\"))
+                fname = f"round{sc['round']}_model_{model_base}.txt"
+                fpath = os.path.join(responses_dir, fname) if responses_dir else None
                 try:
-                    print(f"[{model_name}] Round {idx+1} response:\n{resp}\n{'-'*80}")
-                except Exception:
-                    # Fallback if response contains non-printable characters
-                    print(f"[{model_name}] Round {idx+1} response: (unable to display raw response)\n{'-'*80}")
-                '''
+                    if fpath:
+                        with open(fpath, "w", encoding="utf-8") as wf:
+                            wf.write(resp)
+                except Exception as e:
+                    print(f"Warning: failed to write response to {fpath}: {e}")
+                # Do not store the full response in scenarios to save memory
                 if (idx + 1) % 5 == 0:
                     print(f"  Processed {idx + 1}/{len(scenarios)} queries.")
 
@@ -148,7 +156,18 @@ def main():
             )
 
             for idx, model_path in enumerate(shuffled_models):
-                resp_text = sc["responses"].get(model_path, "(No Output)")
+                # Read response from disk for this round and model
+                model_base = os.path.basename(model_path.rstrip("/\\"))
+                fname = f"round{r_idx}_model_{model_base}.txt"
+                fpath = os.path.join(responses_dir, fname) if responses_dir else None
+                if fpath and os.path.exists(fpath):
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as rf:
+                            resp_text = rf.read()
+                    except Exception:
+                        resp_text = "(Error reading response)"
+                else:
+                    resp_text = "(No Output)"
                 # Do NOT include model filename/label here to keep evaluation blind
                 judge_prompt += f"=== Model {idx+1} ===\n{resp_text}\n\n"
 

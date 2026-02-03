@@ -69,7 +69,7 @@ def load_finetuned_model(model_dir: str, load_in_8bit: bool = False, load_in_4bi
     return model, tokenizer, gen
 
 
-def gen_from_finetuned(gen_pipeline, prompt: str, max_new_tokens: int = 256, **kwargs) -> str:
+def gen_from_finetuned(gen_pipeline, prompt: str, max_new_tokens: int = 5000, **kwargs) -> str:
     # defaults
     generation_kwargs = {"do_sample": False}
     generation_kwargs.update(kwargs)
