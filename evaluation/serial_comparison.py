@@ -6,6 +6,7 @@ import random
 import csv
 import torch
 import gc
+import re
 from evaluation.utils import (
     load_finetuned_model,
     gen_from_finetuned,
@@ -112,7 +113,9 @@ def main():
     model_headers = [os.path.basename(p.rstrip("/\\")) for p in args.model_dirs]
     fieldnames = ["round", "topic", "prompt"] + [f"score_{m}" for m in model_headers] + ["judge_reason", "judge_raw_response"]
     
-    os.makedirs(os.path.dirname(args.output_csv), exist_ok=True)
+    dir_name = os.path.dirname(args.output_csv)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
     
     with open(args.output_csv, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

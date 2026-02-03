@@ -81,14 +81,22 @@ def load_finetuned_model(model_dir: str, load_in_8bit: bool = False, load_in_4bi
         else:
             model = base
 
-    except Exception:
+    except Exception as e:
         # Fallback? If simple load failed, maybe it's because of some structure issue.
         # We re-raise or try a simpler load without quantization?
         # But if quantization was requested, we shouldn't fallback to full precision silently (OOM risk).
         # Let's try to load without specific device map if that was the issue? (Rare)
         # Instead, assume failure.
-        print(f"Warning: Failed to load {model_dir} with quantization. Trying fallback...")
-        base = AutoModelForCausalLM.from_pretrained(model_dir, device_map=device_map)
+        print(f"Warning: Failed to load {model_dir} with quantization. Trying fallback... Error: {e}")
+        # Create offload folder in case we need it
+        offload_folder = os.path.join(model_dir, "offload_folder")
+        os.makedirs(offload_folder, exist_ok=True)
+        
+        base = AutoModelForCausalLM.from_pretrained(
+            model_dir, 
+            device_map=device_map,
+            offload_folder=offload_folder  # Add offload support for fallback
+        )
         model = base
     
     # When the model is loaded with `accelerate` it manages device placement,
