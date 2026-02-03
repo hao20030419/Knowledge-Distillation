@@ -61,7 +61,7 @@ def main():
             "round": i + 1,
             "topic": topic,
             "template": template,
-            "prompt": prompt_text + "，不要寫出答案。",
+            "prompt": prompt_text,
             "responses": {} # Will store { "model_path": "response_text" }
         })
 
@@ -148,9 +148,9 @@ def main():
             )
 
             for idx, model_path in enumerate(shuffled_models):
-                m_label = os.path.basename(model_path.rstrip("/\\"))
                 resp_text = sc["responses"].get(model_path, "(No Output)")
-                judge_prompt += f"=== Model {idx+1} ({m_label}) ===\n{resp_text}\n\n"
+                # Do NOT include model filename/label here to keep evaluation blind
+                judge_prompt += f"=== Model {idx+1} ===\n{resp_text}\n\n"
 
             judge_prompt += (
                 "請先對每個模型給出簡短評語，最後在結尾列出分數，格式如下：\n"
