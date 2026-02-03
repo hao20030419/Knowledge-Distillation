@@ -19,20 +19,24 @@ from GeminiAgent.agent.generator import random_topic
 
 
 def load_finetuned_model(model_dir: str, load_in_8bit: bool = False, load_in_4bit: bool = False):
-    """Load a fine-tuned model directory. Returns (model, tokenizer, gen_pipeline).
+    from transformers import AutoConfig, BitsAndBytesConfig
+    from peft import PeftConfig, PeftModel
+
+    # 1. 檢測這是不是一個 PEFT 適配器
+    is_peft = os.path.exists(os.path.join(model_dir, "adapter_config.json"))
     
-    Args:
-        model_dir: Path to the model or adapter.
-        load_in_8bit: Use 8-bit quantization.
-        load_in_4bit: Use 4-bit quantization.
-    """
-    from transformers import BitsAndBytesConfig
+    # 2. 決定基礎模型路徑
+    if is_peft:
+        peft_config = PeftConfig.from_pretrained(model_dir)
+        base_model_path = peft_config.base_model_name_or_path
+    else:
+        base_model_path = model_dir
 
     tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False)
     if tokenizer.pad_token is None:
-        tokenizer.add_special_tokens({"pad_token": tokenizer.eos_token or "<|endoftext|>"})
+        tokenizer.pad_token = tokenizer.eos_token
 
-    # Prepare quantization config
+    # 3. 配置量化
     bn_config = None
     if load_in_4bit:
         bn_config = BitsAndBytesConfig(
@@ -44,64 +48,23 @@ def load_finetuned_model(model_dir: str, load_in_8bit: bool = False, load_in_4bi
     elif load_in_8bit:
         bn_config = BitsAndBytesConfig(load_in_8bit=True)
 
-    # Try loading with device_map auto
-    device_map = "auto" if torch.cuda.is_available() else None
+    # 4. 載入基礎模型 (最關鍵：device_map 處理)
+    print(f"Loading base model from: {base_model_path}")
+    model = AutoModelForCausalLM.from_pretrained(
+        base_model_path,
+        quantization_config=bn_config,
+        device_map={"": 0}, # 強制先放在第一張顯卡，避免 meta device 漂移
+        trust_remote_code=True,
+        torch_dtype=torch.float16
+    )
 
-    # Helper to load base
-    def _load_base(path):
-        return AutoModelForCausalLM.from_pretrained(
-            path,
-            device_map=device_map,
-            quantization_config=bn_config,
-            trust_remote_code=True
-        )
+    # 5. 如果是適配器，載入 LoRA 權重
+    if is_peft:
+        print(f"Loading adapter weights from: {model_dir}")
+        model = PeftModel.from_pretrained(model, model_dir)
+        # 合併權重（選做，若顯存夠建議合併以加快生成速度）
+        # model = model.merge_and_unload() 
 
-    try:
-        # First attempt: assume model_dir is a full model or base model
-        # If it's an adapter, this might load the base if specified in config, or fail.
-        # However, for PEFT adapters, we usually need to load base first separately if we knew what it was.
-        # But here we try to be generic. 
-        # Strategy: try loading as AutoModel. If it's an adapter, this often works IF adapter_config.json has 'base_model_name_or_path' AND that path is valid locally/remote.
-        # BUT capturing the "it is an adapter" case is tricky with just from_pretrained().
-        
-        # Let's try loading as base first.
-        base = _load_base(model_dir)
-        
-        # If successful, check if we need to wrap it with Peft (e.g. if model_dir ITSELF was the adapter, 
-        # but AutoModel loaded the underlying base).
-        # Actually AutoModel.from_pretrained(adapter_dir) usually loads the BASE model logic if peft is installed? 
-        # No, usually it loads the Config and weights from base_model_name_or_path.
-        
-        # Let's try to explicitly apply PEFT if model_dir contains adapter_config.json
-        if os.path.exists(os.path.join(model_dir, "adapter_config.json")):
-            try:
-                model = PeftModel.from_pretrained(base, model_dir)
-            except Exception:
-                model = base
-        else:
-            model = base
-
-    except Exception as e:
-        # Fallback? If simple load failed, maybe it's because of some structure issue.
-        # We re-raise or try a simpler load without quantization?
-        # But if quantization was requested, we shouldn't fallback to full precision silently (OOM risk).
-        # Let's try to load without specific device map if that was the issue? (Rare)
-        # Instead, assume failure.
-        print(f"Warning: Failed to load {model_dir} with quantization. Trying fallback... Error: {e}")
-        # Create offload folder in case we need it
-        offload_folder = os.path.join(model_dir, "offload_folder")
-        os.makedirs(offload_folder, exist_ok=True)
-        
-        base = AutoModelForCausalLM.from_pretrained(
-            model_dir, 
-            device_map=device_map,
-            offload_folder=offload_folder  # Add offload support for fallback
-        )
-        model = base
-    
-    # When the model is loaded with `accelerate` it manages device placement,
-    # so avoid passing the `device` argument to `pipeline()` which would try
-    # to move the model again and raise an error.
     gen = pipeline("text-generation", model=model, tokenizer=tokenizer)
     return model, tokenizer, gen
 
