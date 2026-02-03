@@ -19,10 +19,12 @@ def main():
     parser.add_argument("--output_csv", type=str, default="evaluation/ft_geval_results.csv")
     parser.add_argument("--temperature", type=float, default=0.7, help="generation temperature")
     parser.add_argument("--top_p", type=float, default=0.9, help="generation top_p")
+    parser.add_argument("--load_in_8bit", action="store_true", help="Load models in 8-bit quantization")
+    parser.add_argument("--load_in_4bit", action="store_true", help="Load models in 4-bit quantization")
     args = parser.parse_args()
 
-    _, _, gen_before = load_finetuned_model(args.before_dir)
-    _, _, gen_after = load_finetuned_model(args.after_dir)
+    _, _, gen_before = load_finetuned_model(args.before_dir, load_in_8bit=args.load_in_8bit, load_in_4bit=args.load_in_4bit)
+    _, _, gen_after = load_finetuned_model(args.after_dir, load_in_8bit=args.load_in_8bit, load_in_4bit=args.load_in_4bit)
 
     # common generation kwargs
     gen_kwargs = {

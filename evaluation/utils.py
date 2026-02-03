@@ -18,28 +18,78 @@ from GeminiAgent.agent.llm_utils import generate_content_with_tokens
 from GeminiAgent.agent.generator import random_topic
 
 
-def load_finetuned_model(model_dir: str):
+def load_finetuned_model(model_dir: str, load_in_8bit: bool = False, load_in_4bit: bool = False):
     """Load a fine-tuned model directory. Returns (model, tokenizer, gen_pipeline).
-
-    This tries to wrap the base model with PEFT adapter if present.
+    
+    Args:
+        model_dir: Path to the model or adapter.
+        load_in_8bit: Use 8-bit quantization.
+        load_in_4bit: Use 4-bit quantization.
     """
+    from transformers import BitsAndBytesConfig
+
     tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=False)
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({"pad_token": tokenizer.eos_token or "<|endoftext|>"})
 
+    # Prepare quantization config
+    bn_config = None
+    if load_in_4bit:
+        bn_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+    elif load_in_8bit:
+        bn_config = BitsAndBytesConfig(load_in_8bit=True)
+
     # Try loading with device_map auto
     device_map = "auto" if torch.cuda.is_available() else None
-    try:
-        base = AutoModelForCausalLM.from_pretrained(model_dir, device_map=device_map)
-        # Try to wrap with PEFT adapter if present
-        try:
-            model = PeftModel.from_pretrained(base, model_dir)
-        except Exception:
-            model = base
-    except Exception:
-        # fallback to direct load
-        model = AutoModelForCausalLM.from_pretrained(model_dir)
 
+    # Helper to load base
+    def _load_base(path):
+        return AutoModelForCausalLM.from_pretrained(
+            path,
+            device_map=device_map,
+            quantization_config=bn_config,
+            trust_remote_code=True
+        )
+
+    try:
+        # First attempt: assume model_dir is a full model or base model
+        # If it's an adapter, this might load the base if specified in config, or fail.
+        # However, for PEFT adapters, we usually need to load base first separately if we knew what it was.
+        # But here we try to be generic. 
+        # Strategy: try loading as AutoModel. If it's an adapter, this often works IF adapter_config.json has 'base_model_name_or_path' AND that path is valid locally/remote.
+        # BUT capturing the "it is an adapter" case is tricky with just from_pretrained().
+        
+        # Let's try loading as base first.
+        base = _load_base(model_dir)
+        
+        # If successful, check if we need to wrap it with Peft (e.g. if model_dir ITSELF was the adapter, 
+        # but AutoModel loaded the underlying base).
+        # Actually AutoModel.from_pretrained(adapter_dir) usually loads the BASE model logic if peft is installed? 
+        # No, usually it loads the Config and weights from base_model_name_or_path.
+        
+        # Let's try to explicitly apply PEFT if model_dir contains adapter_config.json
+        if os.path.exists(os.path.join(model_dir, "adapter_config.json")):
+            try:
+                model = PeftModel.from_pretrained(base, model_dir)
+            except Exception:
+                model = base
+        else:
+            model = base
+
+    except Exception:
+        # Fallback? If simple load failed, maybe it's because of some structure issue.
+        # We re-raise or try a simpler load without quantization?
+        # But if quantization was requested, we shouldn't fallback to full precision silently (OOM risk).
+        # Let's try to load without specific device map if that was the issue? (Rare)
+        # Instead, assume failure.
+        print(f"Warning: Failed to load {model_dir} with quantization. Trying fallback...")
+        base = AutoModelForCausalLM.from_pretrained(model_dir, device_map=device_map)
+        model = base
     
     # When the model is loaded with `accelerate` it manages device placement,
     # so avoid passing the `device` argument to `pipeline()` which would try
