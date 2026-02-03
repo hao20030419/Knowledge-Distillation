@@ -91,11 +91,13 @@ def main():
                 resp = gen_from_finetuned(gen, sc["prompt"], **generation_kwargs)
                 sc["responses"][model_path] = resp
                 # Print each model's response to the console for inspection
+                '''
                 try:
                     print(f"[{model_name}] Round {idx+1} response:\n{resp}\n{'-'*80}")
                 except Exception:
                     # Fallback if response contains non-printable characters
                     print(f"[{model_name}] Round {idx+1} response: (unable to display raw response)\n{'-'*80}")
+                '''
                 if (idx + 1) % 5 == 0:
                     print(f"  Processed {idx + 1}/{len(scenarios)} queries.")
 
@@ -151,9 +153,13 @@ def main():
             )
             for idx, m_label in enumerate(model_headers):
                 judge_prompt += f"Model {idx+1} Score: X\n"
+
+            print(f"這是給judge的提示:\n{judge_prompt}")
             
             # Call Gemini
             judge_response, _, _ = gen_from_gemini(judge_prompt)
+            # Print raw judge response for debugging/verification
+            print(f"Judge raw response:\n{judge_response}\n{'='*80}")
             
             # Parse scores
             # Custom parsing to robustly find "Model N Score: X" or similar lines
@@ -166,34 +172,53 @@ def main():
             }
             
             # Heuristic parsing for multiple scores
-            # expecting lines like "Model 1 Score: 8"
+            # 1) Extract all explicit "Model N ... Score: X" pairs first.
+            model_score_map = {}
+            pair_pattern = r"Model\s*(\d+)" + r".*?Score\s*[:：-]?\s*(\d{1,2})"
+            pairs = re.findall(pair_pattern, judge_response, flags=re.IGNORECASE | re.DOTALL)
+            for num_str, score_str in pairs:
+                try:
+                    n = int(num_str)
+                    s = int(score_str)
+                    if 1 <= s <= 10:
+                        model_score_map[n] = s
+                except Exception:
+                    continue
+
+            # 2) For each expected model, prefer the extracted mapping; otherwise
+            #    search in a small window after the "Model N" occurrence for a score.
             for idx, m_label in enumerate(model_headers):
                 score = -1
-                # Try specific pattern for this model
-                # Pattern: "Model {idx+1} Score: {num}" 
-                # or just look for "Score: {num}" in the paragraph mentioned model... strict is better.
-                
-                # Regex to search for "Model X ... Score: Y"
-                # This simple regex assumes the standard requested format.
-                pattern = fr"Model {idx+1}.*?Score\s*[:：-]?\s*(\d{{1,2}})"
-                match = re.search(pattern, judge_response, re.IGNORECASE | re.DOTALL)
-                
-                if match:
-                    try:
-                        score = int(match.group(1))
-                    except: pass
-                
-                # Fallback: if user prompt structure changes or Gemini ignores format
-                if score == -1:
-                    # Try finding just lines starting with Model X Score
-                    lines = judge_response.splitlines()
-                    for ln in lines:
-                        if f"Model {idx+1}" in ln and "Score" in ln:
-                            s = parse_score_from_text(ln)
-                            if s != -1:
-                                score = s
-                                break
-                
+                model_idx = idx + 1
+                if model_idx in model_score_map:
+                    score = model_score_map[model_idx]
+                else:
+                    # Locate the Model N section and inspect nearby text for a score
+                    loc = re.search(fr"Model\s*{model_idx}", judge_response, flags=re.IGNORECASE)
+                    if loc:
+                        start = loc.end()
+                        # take a reasonable window (next 200 chars or until next 'Model')
+                        end_next_model = re.search(r"Model\s*\d+", judge_response[start:], flags=re.IGNORECASE)
+                        if end_next_model:
+                            end = start + end_next_model.start()
+                        else:
+                            end = min(len(judge_response), start + 200)
+                        window = judge_response[start:end]
+                        # First try to find explicit Score label in the window
+                        s = parse_score_from_text(window)
+                        if s != -1:
+                            score = s
+                        else:
+                            # As a last resort, search for the first standalone number 1-10 in the window
+                            mnum = re.search(r"\b(10|[1-9])\b", window)
+                            if mnum:
+                                try:
+                                    val = int(mnum.group(1))
+                                    if 1 <= val <= 10:
+                                        score = val
+                                except Exception:
+                                    pass
+
                 row[f"score_{m_label}"] = score
                 if score > 0:
                     totals[m_label] += score
