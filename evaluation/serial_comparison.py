@@ -90,6 +90,12 @@ def main():
             for idx, sc in enumerate(scenarios):
                 resp = gen_from_finetuned(gen, sc["prompt"], **generation_kwargs)
                 sc["responses"][model_path] = resp
+                # Print each model's response to the console for inspection
+                try:
+                    print(f"[{model_name}] Round {idx+1} response:\n{resp}\n{'-'*80}")
+                except Exception:
+                    # Fallback if response contains non-printable characters
+                    print(f"[{model_name}] Round {idx+1} response: (unable to display raw response)\n{'-'*80}")
                 if (idx + 1) % 5 == 0:
                     print(f"  Processed {idx + 1}/{len(scenarios)} queries.")
 
