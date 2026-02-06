@@ -4,9 +4,11 @@ import csv
 import json
 import torch
 import gc
+import random
 from typing import Tuple, Dict
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 from peft import PeftConfig, PeftModel
+from GeminiAgent.agent.llm_utils import generate_content_with_tokens
 
 # --- 基礎工具函式 ---
 
@@ -82,6 +84,12 @@ def gen_from_finetuned(gen_pipeline, prompt: str, max_new_tokens: int = 1024, **
         return out[0].get("generated_text", "").strip()
     return ""
 
+def gen_from_gemini(prompt: str, model_name: str = "gemini-3-pro-preview") -> Tuple[str, int, int]:
+    """
+    呼叫 Gemini 生成內容，回傳 (text, out_tokens, in_tokens)
+    """
+    return generate_content_with_tokens(model_name, prompt)
+
 # --- 評審與解析工具 ---
 
 def extract_multi_scores(text: str, num_models: int) -> Dict[int, int]:
@@ -154,7 +162,7 @@ def run_evaluation_round(round_idx, topic, prompt_template, model_dirs, response
 
     # 5. 呼叫 Gemini 評審
     # 注意：這裡呼叫時傳遞的 judge_prompt 內含 current_topic，絕不重複隨機抽題
-    from GeminiAgent.agent.llm_utils import generate_content_with_tokens
+    # from GeminiAgent.agent.llm_utils import generate_content_with_tokens # create_file or globals used instead
     raw_judge_resp, _, _ = generate_content_with_tokens("gemini-3-pro-preview", judge_prompt)
     
     # 6. 解析與映射

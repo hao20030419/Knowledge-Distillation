@@ -7,12 +7,11 @@ import csv
 import torch
 import gc
 import re
-# 假設這些工具函數都放在 evaluation/utils.py 或你指定的路徑
 from evaluation.utils import (
     load_finetuned_model,
     gen_from_finetuned,
     gen_from_gemini,
-    extract_multi_scores,  # 建議使用我剛才提供的新版解析函式
+    extract_multi_scores,
     cleanup_gpu
 )
 from GeminiAgent.agent.generator import PROMPT_TEMPLATES, random_topic
