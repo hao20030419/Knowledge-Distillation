@@ -44,23 +44,38 @@ def main():
 
     # --- Step 2: Generation (模型生成階段) ---
     for path, name in zip(model_paths, model_names):
-        # 檢查是否已經生成過，若有則跳過 (選做)
-        print(f"\n>>> Loading Model: {name}")
+        print(f"\n>>> Loading Model: {name} (Path: {path})")
         try:
             model, tokenizer, gen = load_finetuned_model(path, load_in_4bit=True)
+            print(f"    Model loaded successfully. Generating {len(scenarios)} responses...")
+            
             for sc in scenarios:
                 # 確保生成時使用的是該輪特定的 prompt
                 resp = gen_from_finetuned(gen, sc["full_prompt"], temperature=args.temperature, top_p=args.top_p)
                 
+                # Double check response content
+                if not resp:
+                    print(f"    [WARNING] Empty response for Round {sc['round']} Topic {sc['topic']}")
+                    resp = "[EMPTY RESPONSE]"
+                
                 fname = f"round{sc['round']}_model_{name}.txt"
-                with open(os.path.join(args.responses_dir, fname), "w", encoding="utf-8") as f:
+                out_path = os.path.join(args.responses_dir, fname)
+                
+                with open(out_path, "w", encoding="utf-8") as f:
                     f.write(resp)
+                print(f"    Saved: {fname} ({len(resp)} chars)")
             
             # 釋放顯存
             del gen, model, tokenizer
             cleanup_gpu()
+            print(f"    Unloaded {name}.")
+
         except Exception as e:
-            print(f"Error on model {name}: {e}")
+            print(f"!!! CRITICAL ERROR on model {name} !!!")
+            print(f"Error details: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            print("Skipping this model for generation phase.")
 
     # --- Step 3: Judging (評審階段) ---
     fieldnames = ["round", "topic", "prompt"] + [f"score_{n}" for n in model_names] + ["judge_raw_response"]

@@ -59,14 +59,18 @@ def load_finetuned_model(model_dir: str, load_in_8bit: bool = False, load_in_4bi
         model = PeftModel.from_pretrained(model, model_dir)
 
     # 關鍵修正：return_full_text=False 避免解析到重複的 Prompt
-    # 明確指定 device=0
-    gen = pipeline(
-        "text-generation", 
-        model=model, 
-        tokenizer=tokenizer, 
-        device=0, 
-        return_full_text=False
-    )
+    # 若模型已分配 device_map，pipeline 不應指定 device
+    # 檢查是否已經透過 device_map 載入
+    pipeline_kwargs = {
+        "model": model,
+        "tokenizer": tokenizer,
+        "return_full_text": False
+    }
+    # 只有在沒有 device_map 且非自動分配時才傳入 device=0
+    if getattr(model, "hf_device_map", None) is None:
+         pipeline_kwargs["device"] = 0
+
+    gen = pipeline("text-generation", **pipeline_kwargs)
     return model, tokenizer, gen
 
 def gen_from_finetuned(gen_pipeline, prompt: str, max_new_tokens: int = 1024, **kwargs) -> str:
