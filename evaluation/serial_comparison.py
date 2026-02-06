@@ -7,254 +7,131 @@ import csv
 import torch
 import gc
 import re
+# 假設這些工具函數都放在 evaluation/utils.py 或你指定的路徑
 from evaluation.utils import (
     load_finetuned_model,
     gen_from_finetuned,
     gen_from_gemini,
-    parse_score_from_text,
-    random_topic,
+    extract_multi_scores,  # 建議使用我剛才提供的新版解析函式
+    cleanup_gpu
 )
-from GeminiAgent.agent.generator import PROMPT_TEMPLATES
-
-def get_prompts_list():
-    """Load prompts from JSON or fallback to default list."""
-    # Try to find prompts.json in GeminiAgent/agent/prompts.json
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    json_path = os.path.join(base_dir, "GeminiAgent", "agent", "prompts.json")
-    
-    if os.path.exists(json_path):
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, list) and data:
-                    return data
-        except Exception:
-            pass
-    return PROMPT_TEMPLATES
-
-def cleanup_gpu():
-    """Force garbage collection and empty CUDA cache."""
-    gc.collect()
-    torch.cuda.empty_cache()
+from GeminiAgent.agent.generator import PROMPT_TEMPLATES, random_topic
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_dirs", nargs='+', required=True, help="List of model directories to evaluate sequentially")
-    parser.add_argument("--repeats", type=int, default=10, help="Number of test rounds")
-    parser.add_argument("--output_csv", type=str, default="evaluation/serial_comparison_results.csv")
-    parser.add_argument("--responses_dir", type=str, default="evaluation/responses", help="Directory to save model responses")
-    parser.add_argument("--temperature", type=float, default=0.7)
-    parser.add_argument("--top_p", type=float, default=0.9)
-    parser.add_argument("--load_in_8bit", action="store_true")
-    parser.add_argument("--load_in_4bit", action="store_true")
+    parser.add_argument("--model_dirs", nargs='+', required=True, help="List of model directories")
+    parser.add_argument("--repeats", type=int, default=10)
+    parser.add_argument("--output_csv", type=str, default="evaluation/results.csv")
+    parser.add_argument("--responses_dir", type=str, default="evaluation/responses")
+    parser.add_argument("--temperature", type=float, default=0.3)
+    parser.add_argument("--top_p", type=float, default=0.8)
     args = parser.parse_args()
 
-    prompts_pool = get_prompts_list()
+    os.makedirs(args.responses_dir, exist_ok=True)
     
-    # --- Step 1: Prepare Scenarios (Topic + Prompt) ---
-    print(f"=== Step 1: Preparing {args.repeats} test scenarios ===")
+    model_paths = [p.rstrip("/\\") for p in args.model_dirs]
+    model_names = [os.path.basename(p) for p in model_paths]
+
+    # --- Step 1: Scenario Preparation (固定每一輪的主題) ---
     scenarios = []
     for i in range(args.repeats):
         topic = random_topic()
-        template = random.choice(prompts_pool)
-        prompt_text = template.format(topic=topic)
+        template = random.choice(PROMPT_TEMPLATES)
         scenarios.append({
             "round": i + 1,
             "topic": topic,
-            "template": template,
-            "prompt": prompt_text,
-            "responses": {} # Will store { "model_path": "response_text" }
+            "full_prompt": template.format(topic=topic)
         })
 
-    # --- Step 2: Serial Generation (Load one model, gen all, unload) ---
-    print(f"=== Step 2: Generating responses from {len(args.model_dirs)} models sequentially ===")
-    
-    generation_kwargs = {
-        "temperature": args.temperature,
-        "top_p": args.top_p,
-    }
-
-    # Ensure responses directory exists
-    responses_dir = args.responses_dir
-    if responses_dir:
-        os.makedirs(responses_dir, exist_ok=True)
-
-    for model_path in args.model_dirs:
-        model_name = os.path.basename(model_path.rstrip("/\\"))
-        print(f"\n--- Loading Model: {model_name} ({model_path}) ---")
-        
+    # --- Step 2: Generation (模型生成階段) ---
+    for path, name in zip(model_paths, model_names):
+        # 檢查是否已經生成過，若有則跳過 (選做)
+        print(f"\n>>> Loading Model: {name}")
         try:
-            # Load
-            model, tokenizer, gen = load_finetuned_model(
-                model_path, 
-                load_in_8bit=args.load_in_8bit, 
-                load_in_4bit=args.load_in_4bit
-            )
+            model, tokenizer, gen = load_finetuned_model(path, load_in_4bit=True)
+            for sc in scenarios:
+                # 確保生成時使用的是該輪特定的 prompt
+                resp = gen_from_finetuned(gen, sc["full_prompt"], temperature=args.temperature, top_p=args.top_p)
+                
+                fname = f"round{sc['round']}_model_{name}.txt"
+                with open(os.path.join(args.responses_dir, fname), "w", encoding="utf-8") as f:
+                    f.write(resp)
             
-            # Generate for all scenarios
-            print(f"Generating {len(scenarios)} responses...")
-            for idx, sc in enumerate(scenarios):
-                resp = gen_from_finetuned(gen, sc["prompt"], **generation_kwargs)
-                # Write full response to disk immediately to avoid keeping large strings in memory
-                model_base = os.path.basename(model_path.rstrip("/\\"))
-                fname = f"round{sc['round']}_model_{model_base}.txt"
-                fpath = os.path.join(responses_dir, fname) if responses_dir else None
-                try:
-                    if fpath:
-                        with open(fpath, "w", encoding="utf-8") as wf:
-                            wf.write(resp)
-                except Exception as e:
-                    print(f"Warning: failed to write response to {fpath}: {e}")
-                # Do not store the full response in scenarios to save memory
-                if (idx + 1) % 5 == 0:
-                    print(f"  Processed {idx + 1}/{len(scenarios)} queries.")
-
-        except Exception as e:
-            print(f"Error processing model {model_name}: {e}")
-        finally:
-            # Unload explicitly
-            print(f"Unloading {model_name}...")
-            if 'gen' in locals(): del gen
-            if 'model' in locals(): del model
-            if 'tokenizer' in locals(): del tokenizer
+            # 釋放顯存
+            del gen, model, tokenizer
             cleanup_gpu()
-            time.sleep(2) # brief pause to let memory settle
+        except Exception as e:
+            print(f"Error on model {name}: {e}")
 
-    # --- Step 3: Judge with Gemini ---
-    print(f"\n=== Step 3: Judging with Gemini ===")
-    
-    # Open CSV for writing
-    # Construct field names: round, topic, prompt, score_model1, score_model2..., judge_reason
-    # We use model directory names as column headers
-    model_headers = [os.path.basename(p.rstrip("/\\")) for p in args.model_dirs]
-    fieldnames = ["round", "topic", "prompt"] + [f"score_{m}" for m in model_headers] + ["judge_reason", "judge_raw_response"]
-    
-    dir_name = os.path.dirname(args.output_csv)
-    if dir_name:
-        os.makedirs(dir_name, exist_ok=True)
-    
+    # --- Step 3: Judging (評審階段) ---
+    fieldnames = ["round", "topic", "prompt"] + [f"score_{n}" for n in model_names] + ["judge_raw_response"]
+    totals = {n: 0 for n in model_names}
+
     with open(args.output_csv, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        
-        totals = {m: 0 for m in model_headers}
 
         for sc in scenarios:
-            r_idx = sc["round"]
-            topic = sc["topic"]
+            # 打亂順序以避免位置偏差 (Position Bias)
+            shuffled_indices = list(range(len(model_names)))
+            random.shuffle(shuffled_indices)
             
-            # Construct Judge Prompt
-            # Shuffle model order per round to avoid fixed ordering bias. We'll
-            # still map parsed 'Model N' back to the actual model path below.
-            shuffled_models = args.model_dirs.copy()
-            random.shuffle(shuffled_models)
-
-            judge_prompt = (
-                f"你是評分員。請針對主題「{topic}」的試題生成結果，對下列 {len(shuffled_models)} 個模型的輸出進行評分 (1-10 分，10 為最佳)。\n"
-                f"評分標準：題目正確性、選項合理性、解析完整度、是否符合 Prompt 要求。\n\n"
-                f"User Prompt: {sc['prompt']}\n\n"
-            )
-
-            for idx, model_path in enumerate(shuffled_models):
-                # Read response from disk for this round and model
-                model_base = os.path.basename(model_path.rstrip("/\\"))
-                fname = f"round{r_idx}_model_{model_base}.txt"
-                fpath = os.path.join(responses_dir, fname) if responses_dir else None
-                if fpath and os.path.exists(fpath):
-                    try:
-                        with open(fpath, "r", encoding="utf-8") as rf:
-                            resp_text = rf.read()
-                    except Exception:
-                        resp_text = "(Error reading response)"
+            judge_content = ""
+            idx_to_name = {} 
+            
+            for i, s_idx in enumerate(shuffled_indices):
+                m_name = model_names[s_idx]
+                m_label = i + 1
+                idx_to_name[m_label] = m_name
+                
+                fpath = os.path.join(args.responses_dir, f"round{sc['round']}_model_{m_name}.txt")
+                if os.path.exists(fpath):
+                    with open(fpath, "r", encoding="utf-8") as rf:
+                        content = rf.read()
                 else:
-                    resp_text = "(No Output)"
-                # Do NOT include model filename/label here to keep evaluation blind
-                judge_prompt += f"=== Model {idx+1} ===\n{resp_text}\n\n"
+                    content = "No Output"
+                
+                judge_content += f"=== Model {m_label} ===\n{content}\n\n"
 
-            judge_prompt += (
-                "請先對每個模型給出簡短評語，最後在結尾列出分數，格式如下：\n"
+            # 【關鍵修正】: 使用 sc['topic'] 而非全局變數 topic
+            judge_prompt = (
+                f"你是一位嚴苛的學術評審。請以 Chain-of-Thought (先說明理由) 的方式，針對主題「{sc['topic']}」對這 {len(model_paths)} 個模型的試題進行「強制排名評分」。\n\n"
+                f"【評分軍規】\n"
+                f"1. 僅看題幹：無視解析、答案、排版、贅語或幻覺。\n"
+                f"2. 強制分差：第一名(最佳)必給10分，最後一名必給1分。嚴禁給予相近或重複分數，必須拉大分差。\n"
+                f"3. 核心指標：正確性(邏輯無誤) + 深度(高階應用)。\n\n"
+                f"【待評內容】\n{judge_content}"
+                f"請先說明理由 (CoT)，最後務必以「Final Ratings:」標籤開頭並按下列格式結尾：\n"
+                + "\n".join([f"Model {i+1} Score: X" for i in range(len(model_paths))])
             )
-            for idx in range(len(shuffled_models)):
-                judge_prompt += f"Model {idx+1} Score: X\n"
 
-            print(f"這是給judge的提示:\n{judge_prompt}")
+            print(f"--- Round {sc['round']} Judging Topic: {sc['topic']} ---")
+            raw_judge_resp, _, _ = gen_from_gemini(judge_prompt)
             
-            # Call Gemini
-            judge_response, _, _ = gen_from_gemini(judge_prompt)
-            # Print raw judge response for debugging/verification
-            print(f"Judge raw response:\n{judge_response}\n{'='*80}")
+            # 使用更魯棒的解析方式
+            extracted_scores = extract_multi_scores(raw_judge_resp, len(model_paths))
             
-            # Parse scores
-            # Custom parsing to robustly find "Model N Score: X" or similar lines
             row = {
-                "round": r_idx,
-                "topic": topic,
-                "prompt": sc["prompt"],
-                "judge_reason": judge_response.replace("\n", "\\n")[:5000],
-                "judge_raw_response": judge_response
+                "round": sc["round"], 
+                "topic": sc["topic"], 
+                "prompt": sc["full_prompt"], 
+                "judge_raw_response": raw_judge_resp
             }
             
-            # Heuristic parsing for multiple scores
-            # 1) Extract all explicit "Model N ... Score: X" pairs first.
-            model_score_map = {}
-            pair_pattern = r"Model\s*(\d+)" + r".*?Score\s*[:：-]?\s*(\d{1,2})"
-            pairs = re.findall(pair_pattern, judge_response, flags=re.IGNORECASE | re.DOTALL)
-            for num_str, score_str in pairs:
-                try:
-                    n = int(num_str)
-                    s = int(score_str)
-                    if 1 <= s <= 10:
-                        model_score_map[n] = s
-                except Exception:
-                    continue
-
-            # 2) For each label index in the judge response (Model 1, Model 2, ...),
-            #    map that label back to the shuffled model presented and assign score.
-            for model_idx in range(1, len(shuffled_models) + 1):
-                score = -1
-                if model_idx in model_score_map:
-                    score = model_score_map[model_idx]
-                else:
-                    loc = re.search(fr"Model\s*{model_idx}", judge_response, flags=re.IGNORECASE)
-                    if loc:
-                        start = loc.end()
-                        end_next_model = re.search(r"Model\s*\d+", judge_response[start:], flags=re.IGNORECASE)
-                        if end_next_model:
-                            end = start + end_next_model.start()
-                        else:
-                            end = min(len(judge_response), start + 200)
-                        window = judge_response[start:end]
-                        s = parse_score_from_text(window)
-                        if s != -1:
-                            score = s
-                        else:
-                            mnum = re.search(r"\b(10|[1-9])\b", window)
-                            if mnum:
-                                try:
-                                    val = int(mnum.group(1))
-                                    if 1 <= val <= 10:
-                                        score = val
-                                except Exception:
-                                    pass
-
-                mapped_model_path = shuffled_models[model_idx - 1]
-                m_label = os.path.basename(mapped_model_path.rstrip("/\\"))
-                row[f"score_{m_label}"] = score
-                if score > 0:
-                    totals[m_label] += score
+            # 映射分數回 CSV
+            for m_label, m_real_name in idx_to_name.items():
+                s = extracted_scores.get(m_label, -1)
+                row[f"score_{m_real_name}"] = s
+                if s > 0: totals[m_real_name] += s
 
             writer.writerow(row)
             f.flush()
-            print(f"[Round {r_idx}] Judge finished. Scores: {[row.get(f'score_{m}', -1) for m in model_headers]}")
-            time.sleep(1) # rate limit safety
+            print(f"Parsed Scores: {extracted_scores}")
 
-        # Write totals
-        f.write("\n")
-        f.write("Totals:\n")
-        for m in model_headers:
-            f.write(f"{m},{totals[m]}\n")
-            
-    print(f"\nAll Done! Results saved to {args.output_csv}")
+    print("\n" + "="*30)
+    print("Evaluation Complete.")
+    print("Final Totals:", totals)
+    print("="*30)
 
 if __name__ == "__main__":
     main()
