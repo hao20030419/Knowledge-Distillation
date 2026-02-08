@@ -1,0 +1,24 @@
+好的，以下是一道關於分支預測的單選題：
+
+**問題：**
+在計算機架構中，哪種方法最常被用來實現分支預測（Branch Prediction）？
+
+A. 時間戳記法 (Timestamp Method)
+
+B. 二進制樹法 (Binary Tree Method)
+
+C. 閃光存儲器法 (Cache Memory Method)
+
+D. 二進制計數器法 (Binary Counter Method)
+
+**正確答案：**
+
+C. 閃光存儲器法 (Cache Memory Method)
+
+**解析：**
+- **閃光存儲器法（Direct-Mapped Cache or Tagged Cache）**是最常用的分支預測技術之一。它通過使用一個小的高速緩存（通常稱為分支目標緩存或分支目標緩存器 Branch Target Buffer, BTB），記錄之前遇到的分支指令及其預期的下一條執行路徑。
+- 其他選項中的方法雖然存在，但不是主流的分支預測策略：
+  - 時間戳記法並未廣泛應用於現代處理器設計中。
+  - 二進制樹法和二進制計數器法是較早期的研究方向，在實際商用處理器中不常用。
+
+希望這道題目能幫助你理解分支預測的基本概念！

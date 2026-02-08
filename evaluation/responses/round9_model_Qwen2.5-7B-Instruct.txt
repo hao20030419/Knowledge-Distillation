@@ -1,0 +1,20 @@
+好的，以下是一道針對資料工程中大數據（Big Data）領域使用 Apache Spark 為基礎的單選題：
+
+**問題描述**: 下列哪種操作不是 Apache Spark 中 DataFrame API 提供的基本操作？
+
+A) join
+
+B) groupBy
+
+C) collect
+
+D) filter
+
+**答案解析**: 正確的答案是 C) collect。
+
+- A) join: 在 Spark 中，DataFrame 支持多种类型的连接操作。
+- B) groupBy: 可用于对数据进行分组和聚合计算。
+- D) filter: 用于过滤满足特定条件的数据行。
+- C) collect: 这个方法实际上是将所有结果从分布式集群收集到单个节点上，并返回一个本地集合。它并不是一种基本的操作，而是一种行动（action），通常在需要获取最终结果时才会调用。
+
+希望這道題目能符合您的需求！如果有其他要求或需要更多题目，请告诉我。

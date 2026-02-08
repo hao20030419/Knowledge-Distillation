@@ -1,0 +1,17 @@
+好的，以下是一道針對資料工程中大數據（Big Data）領域使用 Apache Spark 為基礎的單選題：
+
+**問題描述**：
+在下列選項中，哪一個不是 Apache Spark 用于處理大數據的主要優點？
+
+A. 高效性 (Efficiency)
+B. 支持多种数据处理方式 (Support for Multiple Processing Styles)
+C. 只能运行于 Hadoop 生态系统内 (Limited to Running in the Hadoop Ecosystem Only)
+D. 易于编程和扩展 (Ease of Programming and Scalability)
+
+**答案解析**：
+- A选项高效性是Apache Spark的一个重要优点。
+- B选项支持多种数据处理方式也是其特点之一，包括批处理、流处理以及机器学习等。
+- C选项不正确，因为Apache Spark不仅可以运行在Hadoop生态系统内，还可以独立运行或与其他框架集成。
+- D选项易于编程和扩展同样是Apache Spark的优势。
+
+因此，正確的答案是 **C. 只能运行于 Hadoop 生态系统内 (Limited to Running in the Hadoop Ecosystem Only)**。

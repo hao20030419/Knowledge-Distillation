@@ -1,0 +1,19 @@
+当然，这里是一道关于资料品质（Data Quality）的单选题：
+
+---
+
+**题目：**
+
+以下哪个选项不是数据质量的关键属性？
+
+A. 准确性 (Accuracy)
+
+B. 完整性 (Completeness)
+
+C. 一致性 (Consistency)
+
+D. 可用性 (Availability)
+
+---
+
+希望这道题目符合您的需求！
