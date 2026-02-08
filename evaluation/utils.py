@@ -74,7 +74,20 @@ def load_finetuned_model(model_dir: str, load_in_8bit: bool = False, load_in_4bi
     return model, tokenizer, gen
 
 def gen_from_finetuned(gen_pipeline, prompt: str, max_new_tokens: int = 1024, **kwargs) -> str:
-    """生成回覆並處理重複懲罰"""
+    """生成回覆並處理重複懲罰，自動套用 Chat Template"""
+    
+    # --- 關鍵修正：套用 Chat Template ---
+    # Qwen-Instruct 等模型若直接吃 Raw Text 效果會變差，必須套用 chat_template
+    tokenizer = gen_pipeline.tokenizer
+    if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
+        try:
+            # 建構標準 Chat 訊息格式
+            messages = [{"role": "user", "content": prompt}]
+            # 轉換為 Prompt String (例如加入 <|im_start|>user ... <|im_start|>assistant)
+            prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        except Exception as e:
+            print(f"[Warn] Failed to apply chat template: {e}")
+
     generation_kwargs = {
         "do_sample": True,
         "repetition_penalty": 1.15,
