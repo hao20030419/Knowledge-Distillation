@@ -1,0 +1,23 @@
+好的，以下是一道針對資料工程中大數據（Big Data）領域使用 Apache Spark 為基礎的單選題：
+
+**問題描述：**
+在進行大型數據分析時，Apache Spark 提供了一種高效的方式來處理和操作大量數據。假設你正在設計一個應用程序，需要從多個分布式文件系統中讀取數據、執行轉換並存儲結果到另一個文件系統中。下列哪種操作流程最能有效地利用 Apache Spark 的特性？
+
+A. 直接使用 Hadoop MapReduce 來讀取數據，然後將其導入至 Spark 集群進行轉換和計算。
+
+B. 使用 Spark 的 RDD API 來讀取數據，對其進行一系列轉換操作後，再保存結果回原始文件系統或新的文件格式。
+
+C. 先使用 Sqoop 將數據從 Relational Database 导入到 HDFS 中，然後使用 Spark SQL 查詢這些數據。
+
+D. 利用 Python 或 Scala 語言直接編寫腳本，在 Spark 上運行，但不使用任何特定的 Spark API。
+
+**正確答案：**
+B
+
+**解析：**
+- **選項 B** 是最佳選擇，因為它直接利用了 Spark 的核心功能，即 Resilient Distributed Datasets (RDD)，這使得它可以更靈活地處理各種數據轉換任務。
+- **選項 A** 不切實際，因為 Hadoop MapReduce 和 Spark 分別是不同的框架，不能直接互聯互通。
+- **選項 C** 描述的是 Sqoop 和 Hive 的工作方式，雖然可以與 Spark 配合使用，但它不是 Spark 自身的核心特點。
+- **選項 D** 可以實現相同的功能，但是不如直接使用 Spark API 方便且效率更高，特別是在涉及複雜轉換時。
+
+此題旨在測試學生對於如何有效利用 Apache Spark 的基本理解和應用能力。
