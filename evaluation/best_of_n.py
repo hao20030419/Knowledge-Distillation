@@ -85,7 +85,9 @@ def main():
     # --- Step 3: Judging (Best of N) ---
     print("\n=== Phase 2: Best-of-N Judging ===")
     
-    os.makedirs(os.path.dirname(args.output_csv), exist_ok=True)
+    output_dir = os.path.dirname(args.output_csv)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     
     # Updated CSV fields
     fieldnames = ["task_id", "topic", "prompt", "winner_model", "judge_reason"] + [f"resp_{name}" for name in model_names]
