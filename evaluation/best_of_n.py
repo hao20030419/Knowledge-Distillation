@@ -119,17 +119,17 @@ def main():
                 judge_content += f"=== {label} ===\n{resp_text}\n\n"
 
             gemini_prompt = (
-                f"You are an expert Computer Science evaluator.\n"
-                f"Topic: {topic}\n"
-                f"Question Prompt: {prompt}\n\n"
-                f"Below are responses from {len(models_in_round)} different AI models. "
-                f"Please verify if they followed the instruction (which usually asks for a Multiple Choice Question with 4 options).\n"
-                f"Compare them based on Correctness (is the CS knowledge accurate?), Clarity (is the question/answer well-phrased?), and Quality.\n\n"
+                f"你是一位資訊工程(CS)領域的專家評審。\n"
+                f"評測主題: {topic}\n"
+                f"問題提示: {prompt}\n\n"
+                f"以下是 {len(models_in_round)} 個不同 AI 模型的回答。 "
+                f"請確認它們是否遵循了指令（通常要求生成一題四選一的單選題）。\n"
+                f"請根據 正確性（CS知識是否精確？）、清晰度（問題/回答的表達是否流暢？）以及 整體品質 來比較這些回答。\n\n"
                 f"{judge_content}"
-                f"Instructions:\n"
-                f"1. Provide a short explanation of your comparison.\n"
-                f"2. Select the SINGLE BEST model.\n"
-                f"3. Output strictly in the final line: 'Winner: Model X' (where X is the number).\n"
+                f"評分指令：\n"
+                f"1. 請簡短說明你的比較理由及分析。\n"
+                f"2. 選出表現 唯一最好 的模型。\n"
+                f"3. 請務必在最後一行嚴格輸出：'Winner: Model X'（其中 X 為該模型的編號）。\n"
             )
             
             try:
