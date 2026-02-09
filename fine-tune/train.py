@@ -71,7 +71,7 @@ def main():
     parser.add_argument("--output_dir", type=str, default="./qwen-finetuned")
     parser.add_argument("--num_train_epochs", type=int, default=3)
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
-    parser.add_argument("--learning_rate", type=float, default=5e-5)
+    parser.add_argument("--learning_rate", type=float, default=1e-5)
     parser.add_argument("--lora_r", type=int, default=16)
     parser.add_argument("--lora_alpha", type=int, default=16)
     parser.add_argument("--max_length", type=int, default=1024)
