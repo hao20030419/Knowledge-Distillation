@@ -215,3 +215,6 @@ checkpoint-*/
 **/checkpoint-*/
 **/*.pt
 **/*.safetensors
+
+# Journal
+journal/
