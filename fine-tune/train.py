@@ -1,72 +1,27 @@
 import argparse
-import json
+import os
+import torch
 from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     TrainingArguments,
-    Trainer,
+    BitsAndBytesConfig
 )
-from transformers.modeling_utils import unwrap_model
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-import torch
-import os
+from peft import LoraConfig, prepare_model_for_kbit_training
+from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
 
-# 強制使用 GPU
+# Force GPU use
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 try:
     from bitsandbytes import __version__ as bnb_version
-    from transformers import BitsAndBytesConfig
     BNB_AVAILABLE = True
-except Exception:
+except ImportError:
     BNB_AVAILABLE = False
-
-
-class DataCollatorForCausalLM:
-    def __init__(self, tokenizer, max_length=1024):
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-
-    def __call__(self, features):
-        input_ids = [f["input_ids"] for f in features]
-        labels = [f["labels"] for f in features]
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            [torch.tensor(x, dtype=torch.long) for x in input_ids], batch_first=True, padding_value=self.tokenizer.pad_token_id
-        )
-        labels = torch.nn.utils.rnn.pad_sequence(
-            [torch.tensor(x, dtype=torch.long) for x in labels], batch_first=True, padding_value=-100
-        )
-        attention_mask = (input_ids != self.tokenizer.pad_token_id).long()
-        return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
-
-
-def build_example(example, tokenizer, max_length=1024):
-    # Expect `messages` list: messages[0] user, messages[1] assistant
-    msgs = example.get("messages") or []
-    if isinstance(msgs, list) and len(msgs) >= 2:
-        prompt = msgs[0].get("content", "")
-        response = msgs[1].get("content", "")
-    else:
-        # fallback to fields
-        prompt = example.get("question", "") or example.get("prompt", "")
-        response = example.get("answer", "") or example.get("completion", "")
-
-    # For causal LM: concatenate and mask prompt tokens in labels
-    sep = tokenizer.eos_token or "\n"
-    full = prompt + sep + response + (tokenizer.eos_token or "")
-    full_ids = tokenizer(full, truncation=True, max_length=max_length, add_special_tokens=True).input_ids
-    prompt_ids = tokenizer(prompt + sep, truncation=True, max_length=max_length, add_special_tokens=True).input_ids
-
-    labels = full_ids.copy()
-    # mask prompt part
-    for i in range(len(prompt_ids)):
-        labels[i] = -100
-    return {"input_ids": full_ids, "labels": labels}
-
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name_or_path", type=str, required=True)
+    parser.add_argument("--model_name_or_path", type=str, required=True, help="Base model identifier")
     parser.add_argument("--dataset_path", type=str, default="../GeminiAgent/results/clean_dataset.jsonl")
     parser.add_argument("--output_dir", type=str, default="./qwen-finetuned")
     parser.add_argument("--num_train_epochs", type=int, default=3)
@@ -74,99 +29,126 @@ def main():
     parser.add_argument("--learning_rate", type=float, default=1e-5)
     parser.add_argument("--lora_r", type=int, default=16)
     parser.add_argument("--lora_alpha", type=int, default=16)
-    parser.add_argument("--max_length", type=int, default=1024)
+    parser.add_argument("--max_seq_length", type=int, default=1024)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=16)
-    parser.add_argument("--load_in_8bit", action="store_true", help="Use 8-bit quantization via bitsandbytes")
-    parser.add_argument("--load_in_4bit", action="store_true", help="Use 4-bit quantization via bitsandbytes (bnb) - requires bitsandbytes and transformers support")
+    parser.add_argument("--load_in_4bit", action="store_true", help="Use 4-bit quantization")
     args = parser.parse_args()
 
-    ds = load_dataset("json", data_files=args.dataset_path, split="train", keep_in_memory=False)
+    print(f"Loading dataset from {args.dataset_path}...")
+    ds = load_dataset("json", data_files=args.dataset_path, split="train")
 
+    # 1. Standardize Dataset Format
+    # Ensure every example has "messages" format for Qwen
+    def standardize_data(example):
+        msgs = example.get("messages") or []
+        if isinstance(msgs, list) and len(msgs) >= 2:
+            return {"messages": msgs}
+        else:
+            # Fallback for "question"/"answer" or "prompt"/"completion"
+            prompt = example.get("question", "") or example.get("prompt", "")
+            response = example.get("answer", "") or example.get("completion", "")
+            return {
+                "messages": [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": response}
+                ]
+            }
+    
+    ds = ds.map(standardize_data)
+
+    # 2. Load Tokenizer
+    print("Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False)
     if tokenizer.pad_token is None:
-        tokenizer.add_special_tokens({"pad_token": tokenizer.eos_token or "<|endoftext|>"})
+        tokenizer.pad_token = tokenizer.eos_token
 
-    # Map dataset
-    def map_fn(example):
-        return build_example(example, tokenizer, max_length=args.max_length)
-
-    ds = ds.map(map_fn, remove_columns=ds.column_names)
-
-    # Load model with optional bitsandbytes quantization
-    print("Loading model (this may take a while)...")
-    load_kwargs = {}
-    if args.load_in_4bit or args.load_in_8bit:
-        if not BNB_AVAILABLE:
-            raise RuntimeError("bitsandbytes is required for 8-bit/4-bit loading. Install bitsandbytes and a compatible transformers version.")
-
+    # 3. Load Model (with Quantization support)
+    print("Loading model...")
+    bnb_config = None
     if args.load_in_4bit:
+        if not BNB_AVAILABLE:
+            raise RuntimeError("bitsandbytes required for 4-bit loading")
+            
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.float16,
         )
-        load_kwargs["quantization_config"] = bnb_config
-        # 不設 device_map，讓 bitsandbytes 自動管理
-    elif args.load_in_8bit:
-        # 8-bit 不設 device_map，讓 bitsandbytes 自動管理
-        load_kwargs["load_in_8bit"] = True
-    else:
-        load_kwargs["device_map"] = "cuda" if torch.cuda.is_available() else "cpu"
-        load_kwargs["torch_dtype"] = torch.float16 if torch.cuda.is_available() else torch.float32
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
-        **load_kwargs,
-        low_cpu_mem_usage=True,
+        quantization_config=bnb_config,
+        device_map="auto",
+        trust_remote_code=True,
     )
+    
+    # Gradient Checkpointing for memory efficiency
+    model.gradient_checkpointing_enable()
+    if args.load_in_4bit:
+        model = prepare_model_for_kbit_training(model)
 
-    # Prepare for LoRA
+    # 4. LoRA Config
     peft_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
-        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
-        inference_mode=False,
+        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"], # Optimized for Qwen
+        lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
     )
 
-    # If using kbit quantization, prepare model accordingly
-    try:
-        model = prepare_model_for_kbit_training(model)
-    except Exception:
-        # prepare_model_for_kbit_training may not be necessary for full precision models
-        pass
-    model = get_peft_model(model, peft_config)
-
+    # 5. Training Arguments
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         per_device_train_batch_size=args.per_device_train_batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps, # Fixed: was missing
-        num_train_epochs=args.num_train_epochs,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
         logging_steps=10,
-        fp16=torch.cuda.is_available(),
-        save_strategy="steps",            # Changed to steps for finer control
-        save_steps=50,                    # Save every 50 steps
-        save_total_limit=3,               # Keep only last 3 checkpoints
-        warmup_ratio=0.05,                # Add warmup
-        remove_unused_columns=False,
-        push_to_hub=False,
+        num_train_epochs=args.num_train_epochs,
+        save_strategy="steps",
+        save_steps=50,
+        save_total_limit=3,
+        fp16=True, # Qwen supports fp16/bf16
+        warmup_ratio=0.05,
+        optim="paged_adamw_32bit" if args.load_in_4bit else "adamw_torch",
+        gradient_checkpointing=True,
     )
 
-    data_collator = DataCollatorForCausalLM(tokenizer, max_length=args.max_length)
+    # 6. Formatting Function for SFTTrainer
+    # This prepares the text for training
+    def formatting_prompts_func(examples):
+        output_texts = []
+        for messages in examples['messages']:
+            # Apply standard Qwen Chat Template
+            text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+            output_texts.append(text)
+        return output_texts
 
-    trainer = Trainer(
+    # 7. Data Collator (Masking Prompt)
+    # Automatically masks the user instructions so loss is only calculated on assistant response
+    # Qwen-Instruct typically uses "<|im_start|>assistant\n"
+    response_template = "<|im_start|>assistant\n"
+    collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
+
+    # 8. Initialize SFTTrainer
+    print("Initializing SFTTrainer...")
+    trainer = SFTTrainer(
         model=model,
-        args=training_args,
         train_dataset=ds,
-        data_collator=data_collator,
+        args=training_args,
+        peft_config=peft_config,
+        max_seq_length=args.max_seq_length,
+        formatting_func=formatting_prompts_func,
+        data_collator=collator, 
     )
 
+    print("Starting training...")
     trainer.train()
-    model.push_to_hub = False
+    
+    print("Saving model...")
     trainer.save_model(args.output_dir)
-
+    print("Done!")
 
 if __name__ == "__main__":
     main()
