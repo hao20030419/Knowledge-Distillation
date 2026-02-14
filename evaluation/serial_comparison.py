@@ -142,6 +142,18 @@ def main():
             f.flush()
             print(f"Parsed Scores: {extracted_scores}")
 
+        # Write Final Totals to CSV
+        total_row = {
+            "round": "TOTAL",
+            "topic": "SUM",
+            "prompt": "",
+            "judge_raw_response": ""
+        }
+        for m_name in model_names:
+            total_row[f"score_{m_name}"] = totals[m_name]
+        
+        writer.writerow(total_row)
+
     print("\n" + "="*30)
     print("Evaluation Complete.")
     print("Final Totals:", totals)

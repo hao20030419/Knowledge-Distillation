@@ -90,7 +90,7 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
     
     # Updated CSV fields
-    fieldnames = ["task_id", "topic", "prompt", "winner_model", "judge_reason"] + [f"resp_{name}" for name in model_names]
+    fieldnames = ["task_id", "topic", "prompt", "winner_model", "judge_reason", "model_mapping"] + [f"resp_{name}" for name in model_names]
 
     with open(args.output_csv, "w", encoding="utf-8-sig", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -113,12 +113,17 @@ def main():
             judge_content = ""
             # Mapping from 'Model X' label to real model name
             label_map = {} 
+            label_map_str_list = []
             
             for idx, m_name in enumerate(models_in_round):
                 label = f"Model {idx+1}"
                 label_map[label] = m_name
+                label_map_str_list.append(f"{label}: {m_name}")
                 resp_text = responses_storage[t_id][m_name]
                 judge_content += f"=== {label} ===\n{resp_text}\n\n"
+            
+            # Create a string representation of the mapping for the CSV
+            label_mapping_str = " | ".join(label_map_str_list)
 
             gemini_prompt = (
                 f"你是一位資訊工程(CS)領域的專家評審。請以 Chain-of-Thought (先說明理由) 的方式，針對主題「{topic}」對這 {len(models_in_round)} 個模型的試題進行「排名評分」。\n\n\n"
@@ -162,7 +167,8 @@ def main():
                     "topic": topic,
                     "prompt": prompt,
                     "winner_model": real_winner,
-                    "judge_reason": judge_resp
+                    "judge_reason": judge_resp,
+                    "model_mapping": label_mapping_str
                 }
                 # Fill model responses
                 for m_name in model_names:
