@@ -87,16 +87,16 @@ def main():
 
         # generate both questions
         q_ft = gen_from_finetuned(gen, prompt, **gen_kwargs)
-        # Use GPT for the "Ground Truth" / Competitor model instead of Gemini
-        q_gpt = gen_from_gpt(prompt)
+        # Use Gemini for the "Ground Truth" / Competitor model
+        q_gem, _, _ = gen_from_gemini(prompt)
 
         # Randomize assignment to A/B for double-blind
         a_is_ft = random.choice([True, False])
         if a_is_ft:
             A_text = q_ft
-            B_text = q_gpt
+            B_text = q_gem
         else:
-            A_text = q_gpt
+            A_text = q_gem
             B_text = q_ft
 
 
@@ -114,7 +114,7 @@ def main():
             "請先給出每題的詳細評分理由，再在各自理由最後一行回報 'Score: X'（X 為 1-10 的整數）。只要數字即可作為分數行的結尾。"
         )
 
-        judge_text, _, _ = gen_from_gemini(judge_prompt)
+        judge_text = gen_from_gpt(judge_prompt)
 
         # extract two scores sequentially
         scores = []
