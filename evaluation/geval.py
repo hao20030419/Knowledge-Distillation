@@ -1,15 +1,25 @@
 import argparse
 import time
+import re
 from evaluation.utils import (
     load_finetuned_model,
     gen_from_finetuned,
     gen_from_gemini,
-    gen_from_gpt,
-    parse_score_from_text,
-    random_topic,
-    save_rounds_csv,
 )
+from GeminiAgent.agent.generator import random_topic
 
+def parse_score_from_text(text: str) -> int:
+    """從 'Score: X' 或類似字樣中解析分數 (1-10)"""
+    # 針對 "Score: 8" 或 "Score: 10" 的格式
+    match = re.search(r"Score[:\s]*(\d+)", text, re.IGNORECASE)
+    if match:
+        try:
+            val = int(match.group(1))
+            if 1 <= val <= 10:
+                return val
+        except ValueError:
+            pass
+    return -1
 
 def main():
     parser = argparse.ArgumentParser()
@@ -72,6 +82,9 @@ def main():
         # Judge (GPT) with CoT; do NOT reveal sources
         judge_prompt = (
             "你是評分員。請以 Chain-of-Thought (先說明理由) 的方式，分別對下面兩份試題從 1 到 10 (整數) 評分，10 為最佳。\n\n"
+            f"【評分軍規】\n"
+            f"1. 僅看題幹：無視解析、答案、排版、贅語或幻覺。\n"
+            f"2. 核心指標：正確性(邏輯無誤) + 深度(高階應用)。\n\n"
             f"Topic: {topic}\n\n"
             "A:\n"
             f"{A_text}\n\n"
@@ -80,7 +93,7 @@ def main():
             "請先給出每題的詳細評分理由，再在各自理由最後一行回報 'Score: X'（X 為 1-10 的整數）。只要數字即可作為分數行的結尾。"
         )
 
-        judge_text = gen_from_gpt(judge_prompt)
+        judge_text, _, _ = gen_from_gemini(judge_prompt)
 
         # extract two scores sequentially
         scores = []
