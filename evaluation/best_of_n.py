@@ -129,15 +129,14 @@ def main():
                 f"你是一位嚴苛的學術評審。請以 Chain-of-Thought (先說明理由) 的方式，仔細閱讀並比較這些回答，選出表現最好的一個。針對 {len(models_in_round)} 個模型的試題進行「排名評分」。\n"
                 
                 f"### 評測主題\n{topic}\n\n"
-                f"### 問題提示 (Prompt)\n{prompt}\n\n"
                 
-                f"### 各模型回答\n"
-                f"{judge_content}"
-                
-                f"### 評審步驟 (Chain-of-Thought)\n"
+                f"【評分軍規】\n"
                 f"1. 僅看題幹：無視解析、答案、排版、贅語或幻覺。\n"
                 f"2. 核心指標：正確性(邏輯無誤) + 深度(高階應用)。\n\n"
                 f"3. **最終決定**：根據上述分析，選出唯一的贏家。\n\n"
+
+                f"### 各模型回答\n"
+                f"{judge_content}"
 
                 f"請務必在回答的最後一行，嚴格按照此格式輸出贏家：\n"
                 f"Winner: Model X\n"
