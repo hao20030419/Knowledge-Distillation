@@ -218,3 +218,6 @@ checkpoint-*/
 
 # Journal
 journal/
+
+# responses
+evaluation/responses

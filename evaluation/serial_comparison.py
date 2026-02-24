@@ -30,7 +30,7 @@ def main():
     
     model_paths = [p.rstrip("/\\") for p in args.model_dirs]
     model_names = [os.path.basename(p) for p in model_paths]
-
+    
     # --- Step 1: Scenario Preparation (固定每一輪的主題) ---
     scenarios = []
     for i in range(args.repeats):

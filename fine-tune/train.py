@@ -20,13 +20,13 @@ def main():
     parser.add_argument("--model_name_or_path", type=str, required=True, help="Base model identifier")
     parser.add_argument("--dataset_path", type=str, default="../GeminiAgent/results/clean_dataset_4000.jsonl")
     parser.add_argument("--output_dir", type=str, default="./qwen-ft4000-v2")
-    parser.add_argument("--num_train_epochs", type=int, default=2)
+    parser.add_argument("--num_train_epochs", type=int, default=3)
     parser.add_argument("--per_device_train_batch_size", type=int, default=1)
-    parser.add_argument("--learning_rate", type=float, default=3e-5) # 稍微拉回 3e-5 保持模型活力
+    parser.add_argument("--learning_rate", type=float, default=3e-5) 
     parser.add_argument("--lora_r", type=int, default=16)
     parser.add_argument("--lora_alpha", type=int, default=32) 
     parser.add_argument("--max_seq_length", type=int, default=1024)
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=64)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=16)
     parser.add_argument("--load_in_4bit", action="store_true")
     args = parser.parse_args()
 
@@ -87,7 +87,7 @@ def main():
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        lora_dropout=0.1,  # 從 0.05 提升到 0.1，強迫模型泛化
+        lora_dropout=0.05,  # 從 0.05 提升到 0.1，強迫模型泛化
         bias="none",
         task_type="CAUSAL_LM",
     )
