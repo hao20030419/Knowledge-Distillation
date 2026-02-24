@@ -127,7 +127,7 @@ def main():
 
             gemini_prompt = (
                 f"你是一位嚴苛的學術評審。請以 Chain-of-Thought (先說明理由) 的方式，仔細閱讀並比較這些回答，選出表現最好的一個。針對 {len(models_in_round)} 個模型的試題進行「排名評分」。\n"
-                
+
                 f"### 評測主題\n{topic}\n\n"
                 
                 f"【評分軍規】\n"
@@ -201,13 +201,28 @@ def main():
     sorted_models = sorted(scoreboard.items(), key=lambda x: x[1], reverse=True)
     total_tasks = len(tasks)
     
-    for name, wins in sorted_models:
-        rate = (wins / total_tasks * 100) if total_tasks > 0 else 0
-        print(f"{name:<30} | {wins:<5} | {rate:.1f}%")
+    # === Final Report & Summary CSV ===
+    summary_csv = args.output_csv.replace(".csv", "_summary.csv")
+    print(f"\nWriting summary results to: {summary_csv}")
     
-    print("="*40)
-    print(f"🏆 CHAMPION: {sorted_models[0][0]}")
-    print("="*40)
+    with open(summary_csv, "w", newline="", encoding="utf-8-sig") as sum_f:
+        sum_writer = csv.writer(sum_f)
+        sum_writer.writerow(["Model Name", "Total Wins", "Win Rate"])
+
+        for name, wins in sorted_models:
+            rate = (wins / total_tasks * 100) if total_tasks > 0 else 0
+            rate_str = f"{rate:.1f}%"
+            
+            # Print to console
+            print(f"{name:<30} | {wins:<5} | {rate_str}")
+            
+            # Write to CSV
+            sum_writer.writerow([name, wins, rate_str])
+
+    if sorted_models:
+        print("="*40)
+        print(f"🏆 CHAMPION: {sorted_models[0][0]}")
+        print("="*40)
 
 if __name__ == "__main__":
     main()
