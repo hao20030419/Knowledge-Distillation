@@ -7,6 +7,25 @@ from evaluation.utils import (
     gen_from_gemini,
 )
 from GeminiAgent.agent.generator import random_topic
+from GPTagent.agent.generator import gpt5_client
+
+def gen_from_gpt(prompt):
+    """
+    Generate content using GPT-4o (or the model configured in GPTagent).
+    """
+    try:
+        response = gpt5_client.chat.completions.create(
+            model="gpt-4o",  # or "gpt-4-turbo" depending on your preference
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Error calling GPT: {e}")
+        return ""
 
 def parse_score_from_text(text: str) -> int:
     """從 'Score: X' 或類似字樣中解析分數 (1-10)"""
@@ -68,16 +87,18 @@ def main():
 
         # generate both questions
         q_ft = gen_from_finetuned(gen, prompt, **gen_kwargs)
-        q_gem, _, _ = gen_from_gemini(prompt)
+        # Use GPT for the "Ground Truth" / Competitor model instead of Gemini
+        q_gpt = gen_from_gpt(prompt)
 
         # Randomize assignment to A/B for double-blind
         a_is_ft = random.choice([True, False])
         if a_is_ft:
             A_text = q_ft
-            B_text = q_gem
+            B_text = q_gpt
         else:
-            A_text = q_gem
+            A_text = q_gpt
             B_text = q_ft
+
 
         # Judge (GPT) with CoT; do NOT reveal sources
         judge_prompt = (
