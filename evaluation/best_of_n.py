@@ -126,19 +126,30 @@ def main():
             label_mapping_str = " | ".join(label_map_str_list)
 
             gemini_prompt = (
-                f"你是一位資訊工程(CS)領域的專家評審。請以 Chain-of-Thought (先說明理由) 的方式，針對主題「{topic}」對這 {len(models_in_round)} 個模型的試題進行「排名評分」。\n\n\n"
-                f"評測主題: {topic}\n"
-                f"問題提示: {prompt}\n\n"
-                f"以下是 {len(models_in_round)} 個不同 AI 模型的回答。 "
+                f"你是一位嚴苛的學術評審。請以 Chain-of-Thought (先說明理由) 的方式，仔細閱讀並比較這些回答，選出表現最好的一個。針對 {len(models_in_round)} 個模型的試題進行「排名評分」。\n"
+                
+                f"### 評測主題\n{topic}\n\n"
+                f"### 問題提示 (Prompt)\n{prompt}\n\n"
+                
+                f"### 各模型回答\n"
                 f"{judge_content}"
-                f"【評分軍規】\n"
+                
+                f"### 評審步驟 (Chain-of-Thought)\n"
                 f"1. 僅看題幹：無視解析、答案、排版、贅語或幻覺。\n"
                 f"2. 核心指標：正確性(邏輯無誤) + 深度(高階應用)。\n\n"
-                f"3. 請務必在最後一行嚴格輸出：'Winner: Model X'（其中 X 為該模型的編號）。\n"
-                
+                f"3. **最終決定**：根據上述分析，選出唯一的贏家。\n\n"
+
+                f"請務必在回答的最後一行，嚴格按照此格式輸出贏家：\n"
+                f"Winner: Model X\n"
+                f"(其中 X 為該模型的編號，例如 Winner: Model 1)"
             )
             
             try:
+                # Call Gemini Judge
+                # Using the imported gen_from_gemini function
+                # Note: original code passed args.temperature, but gen_from_gemini might not take it or uses default.
+                # Checking utils.py usage in original code context. 
+                # Assuming gen_from_gemini(prompt) is the correct signature based on imports.
                 judge_resp, _, _ = gen_from_gemini(gemini_prompt)
                 
                 # Parse Winner
