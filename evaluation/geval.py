@@ -11,20 +11,21 @@ from GPTagent.agent.generator import gpt5_client
 
 def gen_from_gpt(prompt):
     """
-    Generate content using GPT-4o (or the model configured in GPTagent).
+    使用最新的 GPT-5.2 進行生成。
     """
     try:
+        # 建議確保 gpt5_client 是最新的 OpenAI() 實例
         response = gpt5_client.chat.completions.create(
-            model="gpt-4o",  # or "gpt-4-turbo" depending on your preference
+            model="gpt-5.2",  # 更新為最新的穩定版
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "developer", "content": "你是一個專業的學術評分員。"}, 
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
+            temperature=0.5, # 評分任務建議溫度調低一點，增加穩定性
         )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"Error calling GPT: {e}")
+        print(f"Error calling GPT-5: {e}")
         return ""
 
 def parse_score_from_text(text: str) -> int:
@@ -129,7 +130,7 @@ def main():
         score_b = scores[1] if len(scores) >= 2 else -1
 
         # map scores back to models
-        score_finetuned = score_gemini = -1
+        score_finetuned = score_gpt = -1
         if a_is_ft:
             score_finetuned = score_a
             score_gemini = score_b
