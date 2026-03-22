@@ -6,7 +6,7 @@ from evaluation.utils import (
     gen_from_finetuned,
     gen_from_gemini,
 )
-from GeminiAgent.agent.generator import random_topic
+from GeminiAgent.agent.generator import random_topic, PROMPT_TEMPLATES
 from GPTagent.agent.generator import gpt5_client
 
 def gen_from_gpt(prompt):
@@ -84,12 +84,14 @@ def main():
 
     for i in range(args.repeats):
         topic = random_topic()
-        prompt = f"請提供一題關於 {topic} 的四選一單選題。"
-
+        prompt = random.choice(PROMPT_TEMPLATES)
+        prompt = prompt.format(topic=topic)
         # generate both questions
         q_ft = gen_from_finetuned(gen, prompt, **gen_kwargs)
         # Use Gemini for the "Ground Truth" / Competitor model
-        q_gem, _, _ = gen_from_gemini(prompt)
+        q_gem = gen_from_gpt(prompt)
+        if not q_gem:
+            q_gem = "Error: GPT generated no content."
 
         # Randomize assignment to A/B for double-blind
         a_is_ft = random.choice([True, False])
@@ -115,7 +117,7 @@ def main():
             "請先給出每題的詳細評分理由，再在各自理由最後一行回報 'Score: X'（X 為 1-10 的整數）。只要數字即可作為分數行的結尾。"
         )
 
-        judge_text = gen_from_gpt(judge_prompt)
+        judge_text, _, _ = gen_from_gemini(judge_prompt)
 
         # extract two scores sequentially
         scores = []

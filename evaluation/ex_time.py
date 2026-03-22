@@ -4,11 +4,9 @@ import random
 from evaluation.utils import (
     load_finetuned_model,
     gen_from_finetuned,
-    gen_from_gemini,
-    parse_score_from_text,
-    random_topic,
-    save_rounds_csv,
+    gen_from_gemini
 )
+from GeminiAgent.agent.generator import random_topic
 
 
 def main():
